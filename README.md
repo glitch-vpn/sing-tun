@@ -1,5 +1,7 @@
 # sing-tun
 
+> **Glitch VPN fork.** This is `glitch-vpn/sing-tun`, MetaCubeX/sing-tun v0.4.28 with one change: the gVisor stack closes the stop eventfd of its inbound dispatchers. `fdbased.New` in `github.com/metacubex/gvisor` creates one eventfd per dispatcher and never closes it, so every start and close of the stack leaked a file descriptor. `GVisor.Close` now detaches the endpoint, waits for the dispatchers and closes those descriptors once, reading them by reflection (`stack_gvisor_stop_linux.go`); if gVisor changes the shape the descriptors are left open and a warning is logged. Other platforms are unchanged.
+
 Simple transparent proxy library.
 
 For Linux, Windows, macOS and iOS.
