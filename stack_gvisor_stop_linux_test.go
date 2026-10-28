@@ -5,6 +5,7 @@ package tun
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/metacubex/gvisor/pkg/tcpip/stack"
@@ -96,4 +97,22 @@ func TestInboundDispatcherEventFDsReturnsErrorOnBadShape(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestGVisorConcurrentCloseClosesDescriptorsOnce(t *testing.T) {
+	before := countEventFDs(t)
+	gVisor, peer := newSocketPairGVisor(t)
+	require.NoError(t, gVisor.Start())
+	var group sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			require.NoError(t, gVisor.Close())
+		}()
+	}
+	group.Wait()
+	require.Equal(t, before, countEventFDs(t))
+	_ = unix.Close(peer)
+	_ = unix.Close(gVisor.tun.(*NativeTun).tunFd)
 }

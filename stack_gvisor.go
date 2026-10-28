@@ -5,6 +5,7 @@ package tun
 import (
 	"context"
 	"net/netip"
+	"sync"
 	"time"
 
 	E "github.com/metacubex/sing/common/exceptions"
@@ -26,6 +27,7 @@ const WithGVisor = true
 const DefaultNIC tcpip.NICID = 1
 
 type GVisor struct {
+	lifecycle            sync.Mutex
 	ctx                  context.Context
 	tun                  GVisorTun
 	inet4Address         netip.Addr
@@ -83,6 +85,8 @@ func NewGVisor(
 }
 
 func (t *GVisor) Start() error {
+	t.lifecycle.Lock()
+	defer t.lifecycle.Unlock()
 	linkEndpoint, nicOptions, err := t.tun.NewEndpoint()
 	if err != nil {
 		return err
@@ -90,6 +94,7 @@ func (t *GVisor) Start() error {
 	linkEndpoint = &LinkEndpointFilter{linkEndpoint, t.broadcastAddr, t.tun}
 	ipStack, err := NewGVisorStackWithOptions(linkEndpoint, nicOptions)
 	if err != nil {
+		t.stopDispatchers(linkEndpoint)
 		return err
 	}
 	ipStack.SetTransportProtocolHandler(tcp.ProtocolNumber, NewTCPForwarderWithLoopback(t.ctx, ipStack, t.handler, t.inet4LoopbackAddress, t.inet6LoopbackAddress, t.tun).HandlePacket)
@@ -103,6 +108,8 @@ func (t *GVisor) Start() error {
 }
 
 func (t *GVisor) Close() error {
+	t.lifecycle.Lock()
+	defer t.lifecycle.Unlock()
 	if t.stack == nil {
 		return nil
 	}
@@ -110,15 +117,19 @@ func (t *GVisor) Close() error {
 	ipStack := t.stack
 	t.stack = nil
 	t.endpoint = nil
-	err := stopInboundDispatchers(endpoint)
-	if err != nil && t.logger != nil {
-		t.logger.Warn("gVisor: eventfd of the inbound dispatchers is left open: ", err)
-	}
+	t.stopDispatchers(endpoint)
 	ipStack.Close()
 	for _, endpoint := range ipStack.CleanupEndpoints() {
 		endpoint.Abort()
 	}
 	return nil
+}
+
+func (t *GVisor) stopDispatchers(endpoint stack.LinkEndpoint) {
+	err := stopInboundDispatchers(endpoint)
+	if err != nil && t.logger != nil {
+		t.logger.Warn("gVisor: eventfd of the inbound dispatchers is left open: ", err)
+	}
 }
 
 func AddressFromAddr(destination netip.Addr) tcpip.Address {
