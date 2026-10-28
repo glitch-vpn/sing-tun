@@ -106,9 +106,16 @@ func (t *GVisor) Close() error {
 	if t.stack == nil {
 		return nil
 	}
-	t.endpoint.Attach(nil)
-	t.stack.Close()
-	for _, endpoint := range t.stack.CleanupEndpoints() {
+	endpoint := t.endpoint
+	ipStack := t.stack
+	t.stack = nil
+	t.endpoint = nil
+	err := stopInboundDispatchers(endpoint)
+	if err != nil && t.logger != nil {
+		t.logger.Warn("gVisor: eventfd of the inbound dispatchers is left open: ", err)
+	}
+	ipStack.Close()
+	for _, endpoint := range ipStack.CleanupEndpoints() {
 		endpoint.Abort()
 	}
 	return nil
