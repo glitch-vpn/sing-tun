@@ -276,22 +276,21 @@ func TestTCPHandshakeAndData(t *testing.T) {
 	}
 }
 
-func TestICMPEchoAndFilter(t *testing.T) {
+func TestICMPDeclinedEchoAndFilter(t *testing.T) {
 	for _, pair := range [][2]string{{"198.18.0.1", "8.8.8.8"}, {"fd00::1", "2001:4860:4860::8888"}} {
 		t.Run(pair[0], func(t *testing.T) {
 			d := newMemoryTun()
 			testStack(t, d, &testHandler{}, nil)
 			source, target := netip.MustParseAddr(pair[0]), netip.MustParseAddr(pair[1])
-			protocol, kind, reply, offset := byte(1), byte(8), byte(0), 20
+			protocol, kind := byte(1), byte(8)
 			if source.Is6() {
-				protocol, kind, reply, offset = 58, 128, 129, 40
+				protocol, kind = 58, 128
 			}
-			p := transportPacket(source, target, protocol, []byte{kind, 0, 0, 0, 1, 2, 3, 4, 5, 6})
-			d.in <- p
-			response := readPacket(t, d)
-			src, dst, _, ok := mipsPacketAddresses(response)
-			if !ok || src != target || dst != source || response[offset] != reply || !bytes.Equal(response[offset+4:], p[offset+4:]) {
-				t.Fatalf("wrong echo %x", response)
+			d.in <- transportPacket(source, target, protocol, []byte{kind, 0, 0, 0, 1, 2, 3, 4, 5, 6})
+			select {
+			case response := <-d.out:
+				t.Fatalf("declined echo was answered: %x", response)
+			case <-time.After(100 * time.Millisecond):
 			}
 		})
 	}

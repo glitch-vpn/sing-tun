@@ -91,7 +91,7 @@ func TestICMPDirectSessionLifecycle(t *testing.T) {
 }
 
 func TestICMPPolicy(t *testing.T) {
-	for _, policy := range []string{"drop", "reset", "fallback"} {
+	for _, policy := range []string{"drop", "reset", "declined", "error"} {
 		policy := policy
 		t.Run(policy, func(t *testing.T) {
 			d := newMemoryTun()
@@ -103,6 +103,8 @@ func TestICMPPolicy(t *testing.T) {
 					return nil, ErrDrop
 				case "reset":
 					return nil, ErrReset
+				case "declined":
+					return nil, nil
 				default:
 					return nil, errors.New("dial failed")
 				}
@@ -114,7 +116,7 @@ func TestICMPPolicy(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("policy not called")
 			}
-			if policy == "drop" {
+			if policy != "reset" {
 				select {
 				case p := <-d.out:
 					t.Fatalf("drop emitted %x", p)
@@ -123,11 +125,7 @@ func TestICMPPolicy(t *testing.T) {
 				return
 			}
 			p := readPacket(t, d)
-			want := byte(0)
-			if policy == "reset" {
-				want = 3
-			}
-			if p[20] != want {
+			if p[20] != 3 {
 				t.Fatalf("wrong ICMP policy response %x", p)
 			}
 		})
@@ -181,14 +179,11 @@ func TestICMPAdmissionLimitDoesNotBlockInput(t *testing.T) {
 	}
 
 	close(release)
-	// Exactly the admitted requests produce fallback echo replies. The rest
-	// were dropped at admission.
-	for i := 0; i < cap(s.icmpSlots); i++ {
-		readPacket(t, d)
-	}
+	// The handler declines every admitted request, so none is answered, and the
+	// rest were dropped at admission.
 	select {
 	case extra := <-d.out:
-		t.Fatalf("excess ICMP request was not dropped: %x", extra)
+		t.Fatalf("declined or excess ICMP request was answered: %x", extra)
 	case <-time.After(100 * time.Millisecond):
 	}
 	deadline = time.After(time.Second)
@@ -201,10 +196,6 @@ func TestICMPAdmissionLimitDoesNotBlockInput(t *testing.T) {
 		}
 	}
 
-	// Once preparation has completed and the slots drain, a fresh request is
-	// admitted again.
-	s.processPackets([][]byte{packet}, 0)
-	readPacket(t, d)
 }
 
 func TestICMPInterfaceAddressBypassesPolicy(t *testing.T) {
@@ -279,9 +270,9 @@ func TestMipsICMPResetAdministrativelyProhibited(t *testing.T) {
 	}
 }
 
-func TestMipsICMPRepliesOnly(t *testing.T) {
+func TestMipsICMPForwardsOnly(t *testing.T) {
 	for _, ipv6 := range []bool{false, true} {
-		for _, mode := range []string{"fallback", "error", "direct"} {
+		for _, mode := range []string{"declined", "error", "direct"} {
 			t.Run(map[bool]string{false: "ipv4", true: "ipv6"}[ipv6]+"/"+mode, func(t *testing.T) {
 				source, target := netip.MustParseAddr("198.18.0.2"), netip.MustParseAddr("8.8.8.8")
 				protocol, echo, replyType := byte(1), byte(8), byte(0)
@@ -315,7 +306,7 @@ func TestMipsICMPRepliesOnly(t *testing.T) {
 					if mode == "error" {
 						return nil, errors.New("dial failed")
 					}
-					if mode == "fallback" {
+					if mode == "declined" {
 						return nil, nil
 					}
 					// Replies may start before PrepareConnection returns.
@@ -334,11 +325,16 @@ func TestMipsICMPRepliesOnly(t *testing.T) {
 				for i := range input {
 					input[i] = 0 // Simulate the delivery buffer being reused.
 				}
-				count := 1
-				if mode == "direct" {
-					burst() // The same writer remains usable after the callback.
-					count = 9
+				if mode != "direct" {
+					select {
+					case p := <-d.out:
+						t.Fatalf("declined echo was answered: %x", p)
+					case <-time.After(100 * time.Millisecond):
+					}
+					return
 				}
+				burst() // The same writer remains usable after the callback.
+				count := 9
 				for i := 0; i < count; i++ {
 					packet, err := mips.ParseIPPacket(readPacket(t, d))
 					require.NoError(t, err)

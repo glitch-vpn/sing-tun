@@ -738,12 +738,12 @@ func (s *System) processIPv4ICMP(ipHdr header.IPv4, icmpHdr header.ICMPv4) (bool
 		})
 		if errors.Is(err, ErrReset) {
 			return false, s.rejectIPv4WithICMP(ipHdr, header.ICMPv4HostUnreachable)
-		} else if errors.Is(err, ErrDrop) {
+		}
+		// A declined or failed request is dropped, not answered locally.
+		if err != nil || action == nil {
 			return false, nil
 		}
-		if action != nil {
-			return false, action.WritePacket(buf.As(ipHdr).ToOwned())
-		}
+		return false, action.WritePacket(buf.As(ipHdr).ToOwned())
 	}
 	icmpHdr.SetType(header.ICMPv4EchoReply)
 	sourceAddress := ipHdr.SourceAddr()
@@ -809,16 +809,14 @@ func (s *System) processIPv6ICMP(ipHdr header.IPv6, icmpHdr header.ICMPv6) (bool
 				timeout,
 			)
 		})
-		if err != nil {
-			if errors.Is(err, ErrReset) {
-				return false, s.rejectIPv6WithICMP(ipHdr, header.ICMPv6AddressUnreachable)
-			} else if errors.Is(err, ErrDrop) {
-				return false, nil
-			}
+		if errors.Is(err, ErrReset) {
+			return false, s.rejectIPv6WithICMP(ipHdr, header.ICMPv6AddressUnreachable)
 		}
-		if action != nil {
-			return false, action.WritePacket(buf.As(ipHdr).ToOwned())
+		// A declined or failed request is dropped, not answered locally.
+		if err != nil || action == nil {
+			return false, nil
 		}
+		return false, action.WritePacket(buf.As(ipHdr).ToOwned())
 	}
 	icmpHdr.SetType(header.ICMPv6EchoReply)
 	sourceAddress := ipHdr.SourceAddr()

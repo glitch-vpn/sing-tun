@@ -60,19 +60,17 @@ func (s *Mipstack) forwardDetachedICMP(responder *mips.ICMPForwarderResponder) {
 	if errors.Is(err, ErrReset) {
 		_ = responder.Reject()
 		return
-	} else if errors.Is(err, ErrDrop) {
+	}
+	// A declined or failed request is dropped: an echo reply from a destination
+	// the tunnel never reached would reveal the tunnel to the sender.
+	if err != nil || action == nil {
 		_ = responder.Drop()
 		return
 	}
-	if action != nil {
-		packet := responder.IPPacket()
-		buffer := buf.NewSize(len(packet))
-		_, _ = buffer.Write(packet)
-		_ = action.WritePacket(buffer)
-		return
-	}
-	_ = responder.ReplyEcho()
-	_ = responder.Drop()
+	packet := responder.IPPacket()
+	buffer := buf.NewSize(len(packet))
+	_, _ = buffer.Write(packet)
+	_ = action.WritePacket(buffer)
 }
 
 type mipsICMPWriter struct {

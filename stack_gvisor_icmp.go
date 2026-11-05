@@ -76,14 +76,14 @@ func (f *ICMPForwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Pa
 			if errors.Is(err, ErrReset) {
 				gWriteUnreachable(f.stack, pkt)
 				return true
-			} else if errors.Is(err, ErrDrop) {
+			}
+			// A declined or failed request is dropped, not answered locally.
+			if err != nil || action == nil {
 				return true
 			}
-			if action != nil {
-				// TODO: handle error
-				_ = icmpWritePacketBuffer(action, pkt)
-				return true
-			}
+			// TODO: handle error
+			_ = icmpWritePacketBuffer(action, pkt)
+			return true
 		}
 		icmpHdr.SetType(header.ICMPv4EchoReply)
 		sourceAddress := ipHdr.SourceAddress()
@@ -143,15 +143,14 @@ func (f *ICMPForwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Pa
 			if errors.Is(err, ErrReset) {
 				gWriteUnreachable(f.stack, pkt)
 				return true
-			} else if errors.Is(err, ErrDrop) {
+			}
+			if err != nil || action == nil {
 				return true
 			}
-			if action != nil {
-				// TODO: handle error
-				pkt.IncRef()
-				_ = icmpWritePacketBuffer(action, pkt)
-				return true
-			}
+			// TODO: handle error
+			pkt.IncRef()
+			_ = icmpWritePacketBuffer(action, pkt)
+			return true
 		}
 		icmpHdr.SetType(header.ICMPv6EchoReply)
 		sourceAddress := ipHdr.SourceAddress()
