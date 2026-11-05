@@ -273,6 +273,7 @@ func TestMipsICMPResetAdministrativelyProhibited(t *testing.T) {
 func TestMipsICMPForwardsOnly(t *testing.T) {
 	for _, ipv6 := range []bool{false, true} {
 		for _, mode := range []string{"declined", "error", "direct"} {
+			ipv6, mode := ipv6, mode
 			t.Run(map[bool]string{false: "ipv4", true: "ipv6"}[ipv6]+"/"+mode, func(t *testing.T) {
 				source, target := netip.MustParseAddr("198.18.0.2"), netip.MustParseAddr("8.8.8.8")
 				protocol, echo, replyType := byte(1), byte(8), byte(0)
