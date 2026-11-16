@@ -19,10 +19,23 @@ import (
 	M "github.com/metacubex/sing/common/metadata"
 )
 
+// TCPVerdict is what a SYN gets before the gVisor stack answers it.
+type TCPVerdict uint8
+
+const (
+	// TCPAdmit lets the handshake complete and the flow reach the handler.
+	TCPAdmit TCPVerdict = iota
+	// TCPReset answers with an RST, so the client's connect fails at once
+	// instead of succeeding and then losing the connection.
+	TCPReset
+	// TCPDrop answers nothing; the client retransmits the SYN, which is judged
+	// again.
+	TCPDrop
+)
+
 // TCPAdmission is asked, with a SYN's destination, before the gVisor stack
-// answers it. False resets the attempt, so the client's connect fails at once
-// instead of succeeding and then losing the connection.
-type TCPAdmission func(destination netip.AddrPort) bool
+// answers it.
+type TCPAdmission func(destination netip.AddrPort) TCPVerdict
 
 var tcpAdmission atomic.Pointer[TCPAdmission]
 
@@ -99,8 +112,12 @@ func (f *TCPForwarder) Forward(r *tcp.ForwarderRequest) {
 	if admit := tcpAdmission.Load(); admit != nil {
 		id := r.ID()
 		destination, _ := netip.AddrFromSlice(id.LocalAddress.AsSlice())
-		if !(*admit)(netip.AddrPortFrom(destination.Unmap(), id.LocalPort)) {
+		switch (*admit)(netip.AddrPortFrom(destination.Unmap(), id.LocalPort)) {
+		case TCPReset:
 			r.Complete(true)
+			return
+		case TCPDrop:
+			r.Complete(false)
 			return
 		}
 	}
