@@ -5,6 +5,7 @@ package tun
 import (
 	"context"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/gvisor/pkg/tcpip"
@@ -17,6 +18,23 @@ import (
 	"github.com/metacubex/sing/common"
 	M "github.com/metacubex/sing/common/metadata"
 )
+
+// TCPAdmission is asked, with a SYN's destination, before the gVisor stack
+// answers it. False resets the attempt, so the client's connect fails at once
+// instead of succeeding and then losing the connection.
+type TCPAdmission func(destination netip.AddrPort) bool
+
+var tcpAdmission atomic.Pointer[TCPAdmission]
+
+// SetTCPAdmission sets the check for every gVisor stack in the process; nil
+// admits every SYN.
+func SetTCPAdmission(admit TCPAdmission) {
+	if admit == nil {
+		tcpAdmission.Store(nil)
+		return
+	}
+	tcpAdmission.Store(&admit)
+}
 
 type TCPForwarder struct {
 	ctx                  context.Context
@@ -78,6 +96,14 @@ func (f *TCPForwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Pac
 }
 
 func (f *TCPForwarder) Forward(r *tcp.ForwarderRequest) {
+	if admit := tcpAdmission.Load(); admit != nil {
+		id := r.ID()
+		destination, _ := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+		if !(*admit)(netip.AddrPortFrom(destination.Unmap(), id.LocalPort)) {
+			r.Complete(true)
+			return
+		}
+	}
 	var wq waiter.Queue
 	var cancel context.CancelFunc
 	if parentDone := f.ctx.Done(); parentDone != nil {
