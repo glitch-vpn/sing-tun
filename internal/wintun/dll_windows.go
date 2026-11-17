@@ -7,14 +7,19 @@ package wintun
 
 import (
 	"fmt"
+	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/metacubex/sing-tun/internal/wintun/memmod"
-
 	"golang.org/x/sys/windows"
 )
+
+// dllFileName is looked up in the directory of the module that holds this
+// code, by full path and nowhere else: a wintun.dll on the search path or in
+// the working directory is never loaded.
+const dllFileName = "wintun.dll"
 
 func (d *lazyDLL) NewProc(name string) *lazyProc {
 	return &lazyProc{dll: d, Name: name}
@@ -28,7 +33,7 @@ type lazyProc struct {
 }
 
 func (p *lazyProc) Find() error {
-	if atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&p.addr))) != nil {
+	if atomic.LoadUintptr(&p.addr) != 0 {
 		return nil
 	}
 	p.mu.Lock()
@@ -41,12 +46,12 @@ func (p *lazyProc) Find() error {
 	if err != nil {
 		return fmt.Errorf("error loading DLL: %s, MODULE: %s, error: %w", p.dll.Name, p.Name, err)
 	}
-	addr, err := p.nameToAddr()
+	proc, err := p.dll.module.FindProc(p.Name)
 	if err != nil {
 		return fmt.Errorf("error getting %s address: %w", p.Name, err)
 	}
 
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&p.addr)), unsafe.Pointer(addr))
+	atomic.StoreUintptr(&p.addr, proc.Addr())
 	return nil
 }
 
@@ -64,9 +69,9 @@ func (p *lazyProc) Load() error {
 
 type lazyDLL struct {
 	Name   string
-	Base   windows.Handle
 	mu     sync.Mutex
-	module *memmod.Module
+	loaded atomic.Bool
+	module *windows.DLL
 }
 
 func newLazyDLL(name string) *lazyDLL {
@@ -74,25 +79,63 @@ func newLazyDLL(name string) *lazyDLL {
 }
 
 func (d *lazyDLL) Load() error {
-	if atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&d.module))) != nil {
+	if d.loaded.Load() {
 		return nil
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.module != nil {
+	if d.loaded.Load() {
 		return nil
 	}
 
-	module, err := memmod.LoadLibrary(dllContent)
+	path, err := dllPath(d.Name)
 	if err != nil {
-		return fmt.Errorf("unable to load library: %w", err)
+		return err
 	}
-	d.Base = windows.Handle(module.BaseAddr())
-
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&d.module)), unsafe.Pointer(module))
+	handle, err := windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|windows.LOAD_LIBRARY_SEARCH_SYSTEM32)
+	if err != nil {
+		return fmt.Errorf("unable to load %s: %w", path, err)
+	}
+	d.module = &windows.DLL{Name: path, Handle: handle}
+	d.loaded.Store(true)
 	return nil
 }
 
-func (p *lazyProc) nameToAddr() (uintptr, error) {
-	return p.dll.module.ProcAddressByName(p.Name)
+// dllPath is the absolute path of name inside the directory of the module
+// that holds this code: the core's DLL inside an app, or the executable of a
+// service or a test.
+func dllPath(name string) (string, error) {
+	dir, err := moduleDirectory()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+func moduleDirectory() (string, error) {
+	var module windows.Handle
+	address := reflect.ValueOf(moduleDirectory).Pointer()
+	err := windows.GetModuleHandleEx(
+		windows.GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|windows.GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		*(**uint16)(unsafe.Pointer(&address)), &module)
+	if err != nil {
+		return "", fmt.Errorf("unable to find the module of the code: %w", err)
+	}
+	file, err := moduleFileName(module)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(file), nil
+}
+
+func moduleFileName(module windows.Handle) (string, error) {
+	buffer := make([]uint16, windows.MAX_LONG_PATH)
+	length, err := windows.GetModuleFileName(module, &buffer[0], uint32(len(buffer)))
+	if err != nil {
+		return "", fmt.Errorf("unable to read the module's file name: %w", err)
+	}
+	if int(length) >= len(buffer) {
+		return "", fmt.Errorf("the module's file name is longer than %d characters", len(buffer))
+	}
+	return windows.UTF16ToString(buffer[:length]), nil
 }
