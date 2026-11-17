@@ -20,7 +20,7 @@ type (
 )
 
 var (
-	modwintun                         = newLazyDLL("wintun.dll")
+	modwintun                         = newLazyDLL(dllFileName)
 	procWintunCreateAdapter           = modwintun.NewProc("WintunCreateAdapter")
 	procWintunOpenAdapter             = modwintun.NewProc("WintunOpenAdapter")
 	procWintunCloseAdapter            = modwintun.NewProc("WintunCloseAdapter")
