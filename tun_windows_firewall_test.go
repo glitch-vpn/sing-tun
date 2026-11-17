@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"unsafe"
 
 	"github.com/metacubex/sing-tun/internal/winsys"
 
@@ -47,6 +48,75 @@ func strictRouteTun(options Options) *NativeTun {
 	options.AutoRoute = true
 	options.StrictRoute = true
 	return &NativeTun{options: options}
+}
+
+// remotePrefixPermits lists the remote prefixes a permit filter of the IPv6
+// connect layer matches on their own.
+func remotePrefixPermits(engine *fakeFirewallEngine) []netip.Prefix {
+	var prefixes []netip.Prefix
+	for _, filter := range engine.filters {
+		if filter.LayerKey != winsys.FWPM_LAYER_ALE_AUTH_CONNECT_V6 || filter.Action.Type != winsys.FWP_ACTION_PERMIT || filter.NumFilterConditions != 1 {
+			continue
+		}
+		condition := *filter.FilterCondition
+		if condition.FieldKey != winsys.FWPM_CONDITION_IP_REMOTE_ADDRESS || condition.ConditionValue.Type != winsys.FWP_V6_ADDR_MASK {
+			continue
+		}
+		mask := *(**winsys.FWP_V6_ADDR_AND_MASK)(unsafe.Pointer(&condition.ConditionValue.Value))
+		prefixes = append(prefixes, netip.PrefixFrom(netip.AddrFrom16(mask.Addr), int(mask.PrefixLength)))
+	}
+	return prefixes
+}
+
+func hasIPv6Block(engine *fakeFirewallEngine) bool {
+	for _, filter := range engine.filters {
+		if filter.LayerKey == winsys.FWPM_LAYER_ALE_AUTH_CONNECT_V6 && filter.Action.Type == winsys.FWP_ACTION_BLOCK && filter.NumFilterConditions == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Without an IPv6 address on the TUN, a strict route blocks global IPv6 for
+// every process but the core and lets loopback through.
+func TestStrictRouteWithoutTunIPv6KeepsLoopback(t *testing.T) {
+	engine := useFakeFirewall(t, -1)
+	tun := strictRouteTun(Options{Name: "test", Inet4Address: []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")}})
+	require.NoError(t, tun.configureFirewall())
+	require.True(t, hasIPv6Block(engine))
+	require.Equal(t, []netip.Prefix{netip.MustParsePrefix("::1/128")}, remotePrefixPermits(engine))
+}
+
+// With local networks direct, link-local, unique local and multicast IPv6 pass
+// as well.
+func TestStrictRouteWithoutTunIPv6PermitsLocalNetworksWhenDirect(t *testing.T) {
+	engine := useFakeFirewall(t, -1)
+	tun := strictRouteTun(Options{
+		Name:                           "test",
+		Inet4Address:                   []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
+		StrictRouteLocalNetworksDirect: true,
+	})
+	require.NoError(t, tun.configureFirewall())
+	require.True(t, hasIPv6Block(engine))
+	require.ElementsMatch(t, []netip.Prefix{
+		netip.MustParsePrefix("::1/128"),
+		netip.MustParsePrefix("fe80::/10"),
+		netip.MustParsePrefix("fc00::/7"),
+		netip.MustParsePrefix("ff00::/8"),
+	}, remotePrefixPermits(engine))
+}
+
+// With an IPv6 address on the TUN there is no IPv6 block, so the permits for
+// local prefixes are not added either.
+func TestStrictRouteWithTunIPv6HasNoIPv6Block(t *testing.T) {
+	engine := useFakeFirewall(t, -1)
+	tun := strictRouteTun(Options{
+		Name:         "test",
+		Inet6Address: []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
+	})
+	require.NoError(t, tun.configureFirewall())
+	require.False(t, hasIPv6Block(engine))
+	require.Empty(t, remotePrefixPermits(engine))
 }
 
 // A filter that fails to install must not leave the session open, since the

@@ -100,6 +100,8 @@ type Options struct {
 	Inet4LoopbackAddress                  []netip.Addr
 	Inet6LoopbackAddress                  []netip.Addr
 	StrictRoute                           bool
+	// Windows, strict route without a TUN IPv6 address: let link-local, unique local and multicast IPv6 pass.
+	StrictRouteLocalNetworksDirect        bool
 	Inet4RouteAddress                     []netip.Prefix
 	Inet6RouteAddress                     []netip.Prefix
 	Inet4RouteExcludeAddress              []netip.Prefix

@@ -72,6 +72,12 @@ type FWP_BYTE_ARRAY16 struct {
 	ByteArray16 [16]uint8
 }
 
+// FWP_V6_ADDR_AND_MASK matches a remote or local IPv6 address by prefix.
+type FWP_V6_ADDR_AND_MASK struct {
+	Addr         [16]uint8
+	PrefixLength uint8
+}
+
 type FWPM_FILTER_CONDITION0 struct {
 	FieldKey       windows.GUID // Windows type: GUID
 	MatchType      uint32

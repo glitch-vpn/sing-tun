@@ -24,6 +24,12 @@ import (
 var (
 	TunnelType              = "sing-tun"
 	ipv6AllRoutersMulticast = winsys.FWP_BYTE_ARRAY16{ByteArray16: [16]uint8{0xff, 0x02, 15: 0x02}}
+
+	// Package level, since a filter condition holds their address as a uintptr.
+	ipv6LoopbackPrefix    = winsys.FWP_V6_ADDR_AND_MASK{Addr: [16]uint8{15: 0x01}, PrefixLength: 128}
+	ipv6LinkLocalPrefix   = winsys.FWP_V6_ADDR_AND_MASK{Addr: [16]uint8{0xfe, 0x80}, PrefixLength: 10}
+	ipv6UniqueLocalPrefix = winsys.FWP_V6_ADDR_AND_MASK{Addr: [16]uint8{0xfc}, PrefixLength: 7}
+	ipv6MulticastPrefix   = winsys.FWP_V6_ADDR_AND_MASK{Addr: [16]uint8{0xff}, PrefixLength: 8}
 )
 
 type NativeTun struct {
@@ -539,6 +545,47 @@ func (t *NativeTun) configureStrictRoute() error {
 			ndpFilter.Weight.Type = winsys.FWP_UINT8
 			ndpFilter.Weight.Value = uintptr(13)
 			err = engine.addFilter(&ndpFilter)
+			if err != nil {
+				return err
+			}
+		}
+
+		permitPrefixes := []struct {
+			name   string
+			prefix *winsys.FWP_V6_ADDR_AND_MASK
+		}{{"loopback", &ipv6LoopbackPrefix}}
+		if t.options.StrictRouteLocalNetworksDirect {
+			permitPrefixes = append(permitPrefixes,
+				struct {
+					name   string
+					prefix *winsys.FWP_V6_ADDR_AND_MASK
+				}{"link-local", &ipv6LinkLocalPrefix},
+				struct {
+					name   string
+					prefix *winsys.FWP_V6_ADDR_AND_MASK
+				}{"unique local", &ipv6UniqueLocalPrefix},
+				struct {
+					name   string
+					prefix *winsys.FWP_V6_ADDR_AND_MASK
+				}{"multicast", &ipv6MulticastPrefix},
+			)
+		}
+		for _, permit := range permitPrefixes {
+			permitCondition := make([]winsys.FWPM_FILTER_CONDITION0, 1)
+			permitCondition[0].FieldKey = winsys.FWPM_CONDITION_IP_REMOTE_ADDRESS
+			permitCondition[0].MatchType = winsys.FWP_MATCH_EQUAL
+			permitCondition[0].ConditionValue.Type = winsys.FWP_V6_ADDR_MASK
+			permitCondition[0].ConditionValue.Value = uintptr(unsafe.Pointer(permit.prefix))
+			permitFilter := winsys.FWPM_FILTER0{}
+			permitFilter.FilterCondition = &permitCondition[0]
+			permitFilter.NumFilterConditions = 1
+			permitFilter.DisplayData = winsys.CreateDisplayData(TunnelType, "allow ipv6 "+permit.name)
+			permitFilter.SubLayerKey = subLayerKey
+			permitFilter.LayerKey = winsys.FWPM_LAYER_ALE_AUTH_CONNECT_V6
+			permitFilter.Action.Type = winsys.FWP_ACTION_PERMIT
+			permitFilter.Weight.Type = winsys.FWP_UINT8
+			permitFilter.Weight.Value = uintptr(13)
+			err = engine.addFilter(&permitFilter)
 			if err != nil {
 				return err
 			}
