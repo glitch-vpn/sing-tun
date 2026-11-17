@@ -487,7 +487,7 @@ func (t *NativeTun) configureStrictRoute() error {
 	permitFilter6.LayerKey = winsys.FWPM_LAYER_ALE_AUTH_CONNECT_V6
 	permitFilter6.Action.Type = winsys.FWP_ACTION_PERMIT
 	permitFilter6.Weight.Type = winsys.FWP_UINT8
-	permitFilter6.Weight.Value = uintptr(13)
+	permitFilter6.Weight.Value = uintptr(15)
 	permitFilter6.Flags = winsys.FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT
 	err = engine.addFilter(&permitFilter6)
 	if err != nil {
@@ -588,6 +588,36 @@ func (t *NativeTun) configureStrictRoute() error {
 			err = engine.addFilter(&permitFilter)
 			if err != nil {
 				return err
+			}
+		}
+
+		if t.options.DNSModeOrDefault() == DNSModeHijack {
+			// The permits above weigh more than the port 53 block, so a query to
+			// a local resolver needs its own block between them and the core's
+			// permit.
+			for _, permit := range permitPrefixes {
+				blockDNSCondition := make([]winsys.FWPM_FILTER_CONDITION0, 2)
+				blockDNSCondition[0].FieldKey = winsys.FWPM_CONDITION_IP_REMOTE_ADDRESS
+				blockDNSCondition[0].MatchType = winsys.FWP_MATCH_EQUAL
+				blockDNSCondition[0].ConditionValue.Type = winsys.FWP_V6_ADDR_MASK
+				blockDNSCondition[0].ConditionValue.Value = uintptr(unsafe.Pointer(permit.prefix))
+				blockDNSCondition[1].FieldKey = winsys.FWPM_CONDITION_IP_REMOTE_PORT
+				blockDNSCondition[1].MatchType = winsys.FWP_MATCH_EQUAL
+				blockDNSCondition[1].ConditionValue.Type = winsys.FWP_UINT16
+				blockDNSCondition[1].ConditionValue.Value = uintptr(uint16(53))
+				blockDNSFilter := winsys.FWPM_FILTER0{}
+				blockDNSFilter.FilterCondition = &blockDNSCondition[0]
+				blockDNSFilter.NumFilterConditions = 2
+				blockDNSFilter.DisplayData = winsys.CreateDisplayData(TunnelType, "block ipv6 dns "+permit.name)
+				blockDNSFilter.SubLayerKey = subLayerKey
+				blockDNSFilter.LayerKey = winsys.FWPM_LAYER_ALE_AUTH_CONNECT_V6
+				blockDNSFilter.Action.Type = winsys.FWP_ACTION_BLOCK
+				blockDNSFilter.Weight.Type = winsys.FWP_UINT8
+				blockDNSFilter.Weight.Value = uintptr(14)
+				err = engine.addFilter(&blockDNSFilter)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
