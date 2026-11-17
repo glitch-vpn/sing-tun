@@ -56,7 +56,7 @@ func TestInboundDispatcherEventFDsResolve(t *testing.T) {
 }
 
 func TestGVisorCloseDoesNotLeakEventFDs(t *testing.T) {
-	const rounds = 20
+	const rounds = 25
 	before := countEventFDs(t)
 	for i := 0; i < rounds; i++ {
 		gVisor, peer := newSocketPairGVisor(t)

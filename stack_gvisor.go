@@ -102,16 +102,20 @@ func (t *GVisor) Start() error {
 		return err
 	}
 	linkEndpoint = &LinkEndpointFilter{linkEndpoint, t.broadcastAddr, t.tun}
-	ipStack, err := NewGVisorStackWithOptions(linkEndpoint, nicOptions)
-	if err != nil {
-		t.stopDispatchers(linkEndpoint)
-		return err
-	}
+	// The handlers go in before the NIC exists: creating it attaches the
+	// endpoint, whose dispatchers start delivering packets already waiting on
+	// the descriptor, and the stack reads the handlers without a lock.
+	ipStack := newGVisorStack()
 	ipStack.SetTransportProtocolHandler(tcp.ProtocolNumber, NewTCPForwarderWithLoopback(t.ctx, ipStack, t.handler, t.inet4LoopbackAddress, t.inet6LoopbackAddress, t.tun).HandlePacket)
 	ipStack.SetTransportProtocolHandler(udp.ProtocolNumber, NewUDPForwarder(t.ctx, ipStack, t.handler).HandlePacket)
 	icmpForwarder := NewICMPForwarder(t.ctx, ipStack, t.inet4Address, t.inet6Address, t.handler, t.icmpTimeout)
 	ipStack.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 	ipStack.SetTransportProtocolHandler(icmp.ProtocolNumber6, icmpForwarder.HandlePacket)
+	err = createGVisorNIC(ipStack, linkEndpoint, nicOptions)
+	if err != nil {
+		t.stopDispatchers(linkEndpoint)
+		return err
+	}
 	t.stack = ipStack
 	t.endpoint = linkEndpoint
 	return nil
@@ -163,6 +167,15 @@ func NewGVisorStack(ep stack.LinkEndpoint) (*stack.Stack, error) {
 }
 
 func NewGVisorStackWithOptions(ep stack.LinkEndpoint, opts stack.NICOptions) (*stack.Stack, error) {
+	ipStack := newGVisorStack()
+	err := createGVisorNIC(ipStack, ep, opts)
+	if err != nil {
+		return nil, err
+	}
+	return ipStack, nil
+}
+
+func newGVisorStack() *stack.Stack {
 	ipStack := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
@@ -175,16 +188,6 @@ func NewGVisorStackWithOptions(ep stack.LinkEndpoint, opts stack.NICOptions) (*s
 			icmp.NewProtocol6,
 		},
 	})
-	err := ipStack.CreateNICWithOptions(DefaultNIC, ep, opts)
-	if err != nil {
-		return nil, gonet.TranslateNetstackError(err)
-	}
-	ipStack.SetRouteTable([]tcpip.Route{
-		{Destination: header.IPv4EmptySubnet, NIC: DefaultNIC},
-		{Destination: header.IPv6EmptySubnet, NIC: DefaultNIC},
-	})
-	ipStack.SetSpoofing(DefaultNIC, true)
-	ipStack.SetPromiscuousMode(DefaultNIC, true)
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &tcpip.TCPReceiveBufferSizeRangeOption{
 		Min:     1,
 		Default: gvisorTCPReceiveBufferSize,
@@ -199,5 +202,20 @@ func NewGVisorStackWithOptions(ep stack.LinkEndpoint, opts stack.NICOptions) (*s
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &sOpt)
 	mOpt := tcpip.TCPModerateReceiveBufferOption(true)
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &mOpt)
-	return ipStack, nil
+	return ipStack
+}
+
+// createGVisorNIC attaches the endpoint, which starts its inbound delivery.
+func createGVisorNIC(ipStack *stack.Stack, ep stack.LinkEndpoint, opts stack.NICOptions) error {
+	err := ipStack.CreateNICWithOptions(DefaultNIC, ep, opts)
+	if err != nil {
+		return gonet.TranslateNetstackError(err)
+	}
+	ipStack.SetRouteTable([]tcpip.Route{
+		{Destination: header.IPv4EmptySubnet, NIC: DefaultNIC},
+		{Destination: header.IPv6EmptySubnet, NIC: DefaultNIC},
+	})
+	ipStack.SetSpoofing(DefaultNIC, true)
+	ipStack.SetPromiscuousMode(DefaultNIC, true)
+	return nil
 }
