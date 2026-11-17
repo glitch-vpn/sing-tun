@@ -26,6 +26,16 @@ const WithGVisor = true
 
 const DefaultNIC tcpip.NICID = 1
 
+// The send buffer is fixed at 256 KiB. A smaller one caps a download over one
+// flow at half the speed of a TUN with the room, since the app's ACKs ride a
+// round trip through the TUN. The receive buffer is not raised: a larger one
+// cost upload speed on a real TUN, and the send buffer alone gives the
+// download gain at about 1.3 MiB per slowly read flow.
+const (
+	gvisorTCPSendBufferSize    = 256 * 1024
+	gvisorTCPReceiveBufferSize = 20 * 1024
+)
+
 type GVisor struct {
 	lifecycle            sync.Mutex
 	ctx                  context.Context
@@ -175,16 +185,15 @@ func NewGVisorStackWithOptions(ep stack.LinkEndpoint, opts stack.NICOptions) (*s
 	})
 	ipStack.SetSpoofing(DefaultNIC, true)
 	ipStack.SetPromiscuousMode(DefaultNIC, true)
-	bufSize := 20 * 1024
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &tcpip.TCPReceiveBufferSizeRangeOption{
 		Min:     1,
-		Default: bufSize,
-		Max:     bufSize,
+		Default: gvisorTCPReceiveBufferSize,
+		Max:     gvisorTCPReceiveBufferSize,
 	})
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &tcpip.TCPSendBufferSizeRangeOption{
-		Min:     1,
-		Default: bufSize,
-		Max:     bufSize,
+		Min:     gvisorTCPSendBufferSize,
+		Default: gvisorTCPSendBufferSize,
+		Max:     gvisorTCPSendBufferSize,
 	})
 	sOpt := tcpip.TCPSACKEnabled(true)
 	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &sOpt)
