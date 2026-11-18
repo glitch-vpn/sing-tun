@@ -72,6 +72,8 @@ type lazyDLL struct {
 	mu     sync.Mutex
 	loaded atomic.Bool
 	module *windows.DLL
+	// onLoad runs once the library is in memory, before any of its calls.
+	onLoad func(module *windows.DLL)
 }
 
 func newLazyDLL(name string) *lazyDLL {
@@ -97,6 +99,9 @@ func (d *lazyDLL) Load() error {
 		return fmt.Errorf("unable to load %s: %w", path, err)
 	}
 	d.module = &windows.DLL{Name: path, Handle: handle}
+	if d.onLoad != nil {
+		d.onLoad(d.module)
+	}
 	d.loaded.Store(true)
 	return nil
 }

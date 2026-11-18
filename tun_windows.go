@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"sync"
@@ -44,20 +45,34 @@ type NativeTun struct {
 	firewall  firewallEngine
 }
 
+// logStep writes how long the step since mark took and starts the next one.
+// The lines carry no address or name, and reach whatever the process
+// directs the standard logger to.
+func logStep(step string, mark *time.Time) {
+	now := time.Now()
+	log.Printf("[tun] %s in %dms", step, now.Sub(*mark).Milliseconds())
+	*mark = now
+}
+
 func New(options Options) (WinTun, error) {
 	if options.FileDescriptor != 0 {
 		return nil, os.ErrInvalid
 	}
+	mark := time.Now()
 	adapter, err := wintun.CreateAdapter(options.Name, TunnelType, generateGUIDByDeviceName(options.Name))
 	if err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
+		logStep("wintun adapter create found one existing", &mark)
 		createErr := err
 		adapter, err = wintun.OpenAdapter(options.Name)
 		if err != nil {
 			return nil, E.Errors(E.Cause(createErr, "create adapter"), E.Cause(err, "open existing adapter"))
 		}
+		logStep("wintun adapter opened", &mark)
+	} else {
+		logStep("wintun adapter created", &mark)
 	}
 	nativeTun := &NativeTun{
 		adapter: adapter,
@@ -69,6 +84,7 @@ func New(options Options) (WinTun, error) {
 	}
 	nativeTun.session = session
 	nativeTun.readWait = session.ReadWaitEvent()
+	logStep("wintun session started", &mark)
 	err = nativeTun.configure()
 	if err != nil {
 		session.End()
@@ -79,12 +95,14 @@ func New(options Options) (WinTun, error) {
 }
 
 func (t *NativeTun) configure() error {
+	mark := time.Now()
 	luid := winipcfg.LUID(t.adapter.LUID())
 	if len(t.options.Inet4Address) > 0 {
 		err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET), t.options.Inet4Address)
 		if err != nil {
 			return E.Cause(err, "set ipv4 address")
 		}
+		logStep("ipv4 address set", &mark)
 		if t.options.DNSModeOrDefault() != DNSModeDisabled {
 			dnsServers, err := t.options.Inet4DNSAddress()
 			if err != nil {
@@ -100,12 +118,14 @@ func (t *NativeTun) configure() error {
 				return E.Cause(err, "set ipv4 dns")
 			}
 		}
+		logStep("ipv4 dns set", &mark)
 	}
 	if len(t.options.Inet6Address) > 0 {
 		err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), t.options.Inet6Address)
 		if err != nil {
 			return E.Cause(err, "set ipv6 address")
 		}
+		logStep("ipv6 address set", &mark)
 		if t.options.DNSModeOrDefault() != DNSModeDisabled {
 			dnsServers, err := t.options.Inet6DNSAddress()
 			if err != nil {
@@ -121,9 +141,11 @@ func (t *NativeTun) configure() error {
 				return E.Cause(err, "set ipv6 dns")
 			}
 		}
+		logStep("ipv6 dns set", &mark)
 	}
 	if len(t.options.Inet4Address) > 0 || len(t.options.Inet6Address) > 0 {
 		_ = luid.DisableDNSRegistration()
+		logStep("dns registration disabled", &mark)
 	}
 	if t.options.AutoRoute {
 		gateway4, gateway6 := t.options.Inet4GatewayAddr(), t.options.Inet6GatewayAddr()
@@ -141,10 +163,12 @@ func (t *NativeTun) configure() error {
 		if err != nil {
 			return err
 		}
+		logStep("routes added", &mark)
 		err = windnsapi.FlushResolverCache()
 		if err != nil {
 			return err
 		}
+		logStep("resolver cache flushed", &mark)
 	}
 	if len(t.options.Inet4Address) > 0 {
 		inetIf, err := luid.IPInterface(winipcfg.AddressFamily(windows.AF_INET))
@@ -165,6 +189,7 @@ func (t *NativeTun) configure() error {
 		if err != nil {
 			return E.Cause(err, "set ipv4 options")
 		}
+		logStep("ipv4 interface options set", &mark)
 	}
 	if len(t.options.Inet6Address) > 0 {
 		inet6If, err := luid.IPInterface(winipcfg.AddressFamily(windows.AF_INET6))
@@ -184,6 +209,7 @@ func (t *NativeTun) configure() error {
 		if err != nil {
 			return E.Cause(err, "set ipv6 options")
 		}
+		logStep("ipv6 interface options set", &mark)
 	}
 
 	if t.options.AutoRoute && t.options.StrictRoute {
@@ -191,6 +217,7 @@ func (t *NativeTun) configure() error {
 		if err != nil {
 			return err
 		}
+		logStep("strict route filters installed", &mark)
 	}
 
 	return nil
@@ -366,14 +393,20 @@ func (t *NativeTun) write(packetElementList [][]byte) (n int, err error) {
 func (t *NativeTun) Close() error {
 	var err error
 	t.closeOnce.Do(func() {
+		mark := time.Now()
 		t.close.Store(1)
 		windows.SetEvent(t.readWait)
 		t.running.Wait()
+		logStep("wintun readers stopped", &mark)
 		t.session.End()
+		logStep("wintun session ended", &mark)
 		t.adapter.Close()
+		logStep("wintun adapter closed", &mark)
 		t.closeFirewall()
+		logStep("strict route filters removed", &mark)
 		if t.options.AutoRoute {
 			windnsapi.FlushResolverCache()
+			logStep("resolver cache flushed", &mark)
 		}
 	})
 	return err

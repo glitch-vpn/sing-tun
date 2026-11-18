@@ -6,8 +6,10 @@
 package wintun
 
 import (
+	"log"
 	"runtime"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -28,6 +30,44 @@ var (
 	procWintunGetAdapterLUID          = modwintun.NewProc("WintunGetAdapterLUID")
 	procWintunGetRunningDriverVersion = modwintun.NewProc("WintunGetRunningDriverVersion")
 )
+
+func init() {
+	modwintun.onLoad = setupLogger
+}
+
+// logMessage writes one of Wintun's own messages to the standard log with the
+// time the driver gave it. The messages name steps (driver, adapter, session),
+// not addresses.
+func logMessage(timestamp uint64, msg *uint16) uintptr {
+	at := time.Unix(0, (int64(timestamp)-116444736000000000)*100)
+	log.Printf("[tun] wintun %s: %s", at.Format("15:04:05.000"), windows.UTF16PtrToString(msg))
+	return 0
+}
+
+// setupLogger routes Wintun's log to logMessage. The callback's arguments
+// follow the C ABI: a 32-bit process receives the 64-bit timestamp as two words.
+func setupLogger(module *windows.DLL) {
+	proc, err := module.FindProc("WintunSetLogger")
+	if err != nil {
+		return
+	}
+	var callback uintptr
+	switch runtime.GOARCH {
+	case "386":
+		callback = windows.NewCallback(func(_, timestampLow, timestampHigh uint32, msg *uint16) uintptr {
+			return logMessage(uint64(timestampHigh)<<32|uint64(timestampLow), msg)
+		})
+	case "arm":
+		callback = windows.NewCallback(func(_, _, timestampLow, timestampHigh uint32, msg *uint16) uintptr {
+			return logMessage(uint64(timestampHigh)<<32|uint64(timestampLow), msg)
+		})
+	default:
+		callback = windows.NewCallback(func(_ uint32, timestamp uint64, msg *uint16) uintptr {
+			return logMessage(timestamp, msg)
+		})
+	}
+	syscall.SyscallN(proc.Addr(), callback)
+}
 
 func closeAdapter(wintun *Adapter) {
 	syscall.SyscallN(procWintunCloseAdapter.Addr(), 1, wintun.handle, 0, 0)
