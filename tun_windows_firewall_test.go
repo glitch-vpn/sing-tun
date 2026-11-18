@@ -89,7 +89,7 @@ func (e *fakeFirewallEngine) ipv6Verdict(remote string, port uint16) uint32 {
 func useFakeFirewall(t *testing.T, failAfter int) *fakeFirewallEngine {
 	engine := &fakeFirewallEngine{failAfter: failAfter}
 	openFirewallEngine = func() (firewallEngine, error) { return engine, nil }
-	lookupInterfaceIndex = func(string) (uint32, error) { return 7, nil }
+	lookupInterfaceIndex = func(uint64) (uint32, error) { return 7, nil }
 	t.Cleanup(func() {
 		openFirewallEngine = openWindowsFirewallEngine
 	})
@@ -99,7 +99,7 @@ func useFakeFirewall(t *testing.T, failAfter int) *fakeFirewallEngine {
 func strictRouteTun(options Options) *NativeTun {
 	options.AutoRoute = true
 	options.StrictRoute = true
-	return &NativeTun{options: options}
+	return &NativeTun{options: options, adapter: &fakeAdapter{luid: 42}}
 }
 
 var localIPv6Remotes = []string{"fe80::1", "fc00::1", "fd12:3456::1", "ff02::fb"}

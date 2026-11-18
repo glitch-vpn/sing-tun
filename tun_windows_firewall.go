@@ -3,10 +3,10 @@
 package tun
 
 import (
-	"net"
 	"os"
 	"unsafe"
 
+	"github.com/metacubex/sing-tun/internal/winipcfg"
 	"github.com/metacubex/sing-tun/internal/winsys"
 )
 
@@ -23,12 +23,14 @@ type firewallEngine interface {
 // administrator rights.
 var (
 	openFirewallEngine   = openWindowsFirewallEngine
-	lookupInterfaceIndex = func(name string) (uint32, error) {
-		netInterface, err := net.InterfaceByName(name)
+	// The adapter is found by its LUID: its name in Network Connections is
+	// the user's to change.
+	lookupInterfaceIndex = func(luid uint64) (uint32, error) {
+		row, err := winipcfg.LUID(luid).Interface()
 		if err != nil {
 			return 0, err
 		}
-		return uint32(netInterface.Index), nil
+		return row.InterfaceIndex, nil
 	}
 )
 

@@ -34,7 +34,7 @@ var (
 )
 
 type NativeTun struct {
-	adapter   *wintun.Adapter
+	adapter   adapterHandle
 	options   Options
 	session   wintun.Session
 	readWait  windows.Handle
@@ -43,9 +43,10 @@ type NativeTun struct {
 	closeOnce sync.Once
 	close     atomic.Int32
 	firewall  firewallEngine
-	// kept: the adapter belongs to a KeptAdapter, so Close leaves the device
-	// and clears what the session set on it.
-	kept bool
+	// kept: the adapter this process keeps, which Close leaves in place after
+	// clearing what the session set on it. Otherwise the adapter is the
+	// session's own and Close removes it.
+	kept *KeptAdapter
 }
 
 // logStep writes how long the step since mark took and starts the next one.
@@ -61,51 +62,26 @@ func New(options Options) (WinTun, error) {
 	if options.FileDescriptor != 0 {
 		return nil, os.ErrInvalid
 	}
-	mark := time.Now()
-	var adapter *wintun.Adapter
-	var err error
-	kept := isKeptAdapter(options.Name)
-	if kept {
-		adapter, err = wintun.OpenAdapter(options.Name)
-		if err != nil {
-			return nil, E.Cause(err, "open kept adapter")
-		}
-		logStep("kept adapter opened", &mark)
-	} else {
-		adapter, err = wintun.CreateAdapter(options.Name, TunnelType, generateGUIDByDeviceName(options.Name))
-		if err != nil {
-			if !errors.Is(err, os.ErrExist) {
-				return nil, err
-			}
-			logStep("wintun adapter create found one existing", &mark)
-			createErr := err
-			adapter, err = wintun.OpenAdapter(options.Name)
-			if err != nil {
-				return nil, E.Errors(E.Cause(createErr, "create adapter"), E.Cause(err, "open existing adapter"))
-			}
-			logStep("wintun adapter opened", &mark)
-		} else {
-			logStep("wintun adapter created", &mark)
-		}
-	}
-	nativeTun := &NativeTun{
-		adapter: adapter,
-		options: options,
-		kept:    kept,
-	}
-	session, err := adapter.StartSession(0x800000)
+	lease, err := leaseAdapter(options.Name)
 	if err != nil {
-		adapter.Close()
 		return nil, err
 	}
-	nativeTun.session = session
-	nativeTun.readWait = session.ReadWaitEvent()
-	logStep("wintun session started", &mark)
+	nativeTun := &NativeTun{
+		adapter:  lease.adapter,
+		options:  options,
+		session:  lease.session,
+		readWait: lease.session.ReadWaitEvent(),
+		kept:     lease.kept,
+	}
+	if nativeTun.kept != nil {
+		// Whatever an earlier session, or a crashed one, left is not this
+		// session's: an IPv6 resolver must not outlive the IPv6 it served.
+		nativeTun.clearKeptAdapter()
+	}
 	err = nativeTun.configure()
 	if err != nil {
-		session.End()
-		nativeTun.clearKeptAdapter()
-		adapter.Close()
+		lease.session.End()
+		nativeTun.releaseAdapter()
 		return nil, err
 	}
 	return nativeTun, nil
@@ -420,16 +396,8 @@ func (t *NativeTun) Close() error {
 		logStep("wintun readers stopped", &mark)
 		t.session.End()
 		logStep("wintun session ended", &mark)
-		if t.kept {
-			t.clearKeptAdapter()
-			logStep("kept adapter cleared", &mark)
-		}
-		t.adapter.Close()
-		if t.kept {
-			logStep("kept adapter handle closed", &mark)
-		} else {
-			logStep("wintun adapter closed", &mark)
-		}
+		t.releaseAdapter()
+		mark = time.Now()
 		if t.firewall != nil {
 			t.closeFirewall()
 			logStep("strict route filters removed", &mark)
@@ -697,7 +665,7 @@ func (t *NativeTun) configureStrictRoute() error {
 		}
 	}
 
-	interfaceIndex, err := lookupInterfaceIndex(t.options.Name)
+	interfaceIndex, err := lookupInterfaceIndex(t.adapter.LUID())
 	if err != nil {
 		return err
 	}
