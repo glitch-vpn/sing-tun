@@ -28,8 +28,8 @@ func TestARouteSetByACallerIsClearedWhateverItCovers(t *testing.T) {
 		{"Windows' link-local route", route(ours, "fe80::/64", RouteProtocolLocal), false},
 		{"another interface's route", route(other, "0.0.0.0/1", RouteProtocolNetMgmt), false},
 	} {
-		if got := c.row.setOn(ours); got != c.want {
-			t.Errorf("%s: setOn = %v, want %v", c.name, got, c.want)
+		if got := c.row.setByCallerOn(ours); got != c.want {
+			t.Errorf("%s: setByCallerOn = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

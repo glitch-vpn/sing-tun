@@ -19,7 +19,7 @@ func (luid LUID) FlushManagedRoutes(family AddressFamily) error {
 	err = nil
 	for i := range rows {
 		row := &rows[i]
-		if !row.setOn(luid) {
+		if !row.setByCallerOn(luid) {
 			continue
 		}
 		if err2 := row.Delete(); err2 != nil {
@@ -29,8 +29,8 @@ func (luid LUID) FlushManagedRoutes(family AddressFamily) error {
 	return err
 }
 
-// setOn reports whether a caller set the route on the interface.
-func (row *MibIPforwardRow2) setOn(luid LUID) bool {
+// setByCallerOn reports whether a caller set the route on the interface.
+func (row *MibIPforwardRow2) setByCallerOn(luid LUID) bool {
 	return row.InterfaceLUID == luid && row.Protocol == RouteProtocolNetMgmt
 }
 
