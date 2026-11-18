@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/netip"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -164,13 +165,12 @@ func (t *NativeTun) configure() error {
 		if err != nil {
 			return err
 		}
-		for _, routeRange := range routeRanges {
+		err = addRoutes(routeRanges, func(routeRange netip.Prefix) error {
 			if routeRange.Addr().Is4() {
-				err = luid.AddRoute(routeRange, gateway4, 0)
-			} else {
-				err = luid.AddRoute(routeRange, gateway6, 0)
+				return luid.AddRoute(routeRange, gateway4, 0)
 			}
-		}
+			return luid.AddRoute(routeRange, gateway6, 0)
+		})
 		if err != nil {
 			return err
 		}
