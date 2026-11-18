@@ -2,14 +2,12 @@
 
 package winipcfg
 
-import "net/netip"
-
 // FlushManagedRoutes deletes the routes on the interface that were set on it
 // by a caller, and keeps the ones Windows gives every interface (the
 // multicast, broadcast and link-local routes, and the prefix route of an
-// address): those carry the local protocol, and as a second guard their
-// destinations are never deleted. It continues on failures and returns the
-// last error.
+// address), which carry the local protocol. A caller's route may cover those
+// ranges: a default route split in parts ends in 224.0.0.0/3. It continues on
+// failures and returns the last error.
 func (luid LUID) FlushManagedRoutes(family AddressFamily) error {
 	var tab *mibIPforwardTable2
 	err := getIPForwardTable2(family, &tab)
@@ -21,7 +19,7 @@ func (luid LUID) FlushManagedRoutes(family AddressFamily) error {
 	err = nil
 	for i := range rows {
 		row := &rows[i]
-		if row.InterfaceLUID != luid || row.Protocol != RouteProtocolNetMgmt || isSystemRouteDestination(row.DestinationPrefix.Prefix()) {
+		if !row.setOn(luid) {
 			continue
 		}
 		if err2 := row.Delete(); err2 != nil {
@@ -31,9 +29,9 @@ func (luid LUID) FlushManagedRoutes(family AddressFamily) error {
 	return err
 }
 
-func isSystemRouteDestination(prefix netip.Prefix) bool {
-	addr := prefix.Addr()
-	return addr.IsMulticast() || addr.IsLinkLocalUnicast() || addr == netip.AddrFrom4([4]byte{255, 255, 255, 255})
+// setOn reports whether a caller set the route on the interface.
+func (row *MibIPforwardRow2) setOn(luid LUID) bool {
+	return row.InterfaceLUID == luid && row.Protocol == RouteProtocolNetMgmt
 }
 
 // FlushManualIPAddresses deletes the unicast addresses on the interface that a
