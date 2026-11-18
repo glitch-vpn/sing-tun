@@ -25,7 +25,6 @@ type (
 var (
 	modwintun                         = newLazyDLL(dllFileName)
 	procWintunCreateAdapter           = modwintun.NewProc("WintunCreateAdapter")
-	procWintunOpenAdapter             = modwintun.NewProc("WintunOpenAdapter")
 	procWintunCloseAdapter            = modwintun.NewProc("WintunCloseAdapter")
 	procWintunDeleteDriver            = modwintun.NewProc("WintunDeleteDriver")
 	procWintunGetAdapterLUID          = modwintun.NewProc("WintunGetAdapterLUID")
@@ -126,23 +125,6 @@ func CreateAdapter(name string, tunnelType string, requestedGUID *windows.GUID) 
 		return
 	}
 	r0, _, e1 := syscall.Syscall(procWintunCreateAdapter.Addr(), 3, uintptr(unsafe.Pointer(name16)), uintptr(unsafe.Pointer(tunnelType16)), uintptr(unsafe.Pointer(requestedGUID)))
-	if r0 == 0 {
-		err = e1
-		return
-	}
-	wintun = &Adapter{handle: r0}
-	runtime.SetFinalizer(wintun, closeAdapter)
-	return
-}
-
-// OpenAdapter opens an existing Wintun adapter by name.
-func OpenAdapter(name string) (wintun *Adapter, err error) {
-	var name16 *uint16
-	name16, err = windows.UTF16PtrFromString(name)
-	if err != nil {
-		return
-	}
-	r0, _, e1 := syscall.Syscall(procWintunOpenAdapter.Addr(), 1, uintptr(unsafe.Pointer(name16)), 0, 0)
 	if r0 == 0 {
 		err = e1
 		return

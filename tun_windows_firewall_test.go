@@ -99,7 +99,7 @@ func useFakeFirewall(t *testing.T, failAfter int) *fakeFirewallEngine {
 func strictRouteTun(options Options) *NativeTun {
 	options.AutoRoute = true
 	options.StrictRoute = true
-	return &NativeTun{options: options, adapter: &fakeAdapter{luid: 42}}
+	return &NativeTun{options: options, adapter: &fakeAdapter{luid: 42}, luid: 42}
 }
 
 var localIPv6Remotes = []string{"fe80::1", "fc00::1", "fd12:3456::1", "ff02::fb"}

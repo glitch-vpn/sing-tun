@@ -47,6 +47,9 @@ type NativeTun struct {
 	// clearing what the session set on it. Otherwise the adapter is the
 	// session's own and Close removes it.
 	kept *KeptAdapter
+	// luid is read when the session starts: a closed KeptAdapter frees the
+	// handle the Tun's adapter points to.
+	luid uint64
 }
 
 // logStep writes how long the step since mark took and starts the next one.
@@ -59,6 +62,17 @@ func logStep(step string, mark *time.Time) {
 }
 
 func New(options Options) (WinTun, error) {
+	return startTun(options, (*NativeTun).configure)
+}
+
+// The tests' seams over a Wintun session, which needs the driver.
+var (
+	sessionReadWaitEvent = func(session wintun.Session) windows.Handle { return session.ReadWaitEvent() }
+	endSession           = func(session wintun.Session) { session.End() }
+)
+
+// startTun starts a session on the adapter and sets the Tun up with configure.
+func startTun(options Options, configure func(*NativeTun) error) (*NativeTun, error) {
 	if options.FileDescriptor != 0 {
 		return nil, os.ErrInvalid
 	}
@@ -70,17 +84,18 @@ func New(options Options) (WinTun, error) {
 		adapter:  lease.adapter,
 		options:  options,
 		session:  lease.session,
-		readWait: lease.session.ReadWaitEvent(),
+		readWait: sessionReadWaitEvent(lease.session),
 		kept:     lease.kept,
+		luid:     lease.luid,
 	}
 	if nativeTun.kept != nil {
-		// Whatever an earlier session, or a crashed one, left is not this
-		// session's: an IPv6 resolver must not outlive the IPv6 it served.
+		// Whatever an earlier session left is not this session's: an IPv6
+		// resolver must not outlive the IPv6 it served.
 		nativeTun.clearKeptAdapter()
 	}
-	err = nativeTun.configure()
+	err = configure(nativeTun)
 	if err != nil {
-		lease.session.End()
+		endSession(lease.session)
 		nativeTun.releaseAdapter()
 		return nil, err
 	}
@@ -89,7 +104,7 @@ func New(options Options) (WinTun, error) {
 
 func (t *NativeTun) configure() error {
 	mark := time.Now()
-	luid := winipcfg.LUID(t.adapter.LUID())
+	luid := winipcfg.LUID(t.luid)
 	if len(t.options.Inet4Address) > 0 {
 		err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET), t.options.Inet4Address)
 		if err != nil {
@@ -394,7 +409,7 @@ func (t *NativeTun) Close() error {
 		windows.SetEvent(t.readWait)
 		t.running.Wait()
 		logStep("wintun readers stopped", &mark)
-		t.session.End()
+		endSession(t.session)
 		logStep("wintun session ended", &mark)
 		t.releaseAdapter()
 		mark = time.Now()
@@ -665,7 +680,7 @@ func (t *NativeTun) configureStrictRoute() error {
 		}
 	}
 
-	interfaceIndex, err := lookupInterfaceIndex(t.adapter.LUID())
+	interfaceIndex, err := lookupInterfaceIndex(t.luid)
 	if err != nil {
 		return err
 	}
