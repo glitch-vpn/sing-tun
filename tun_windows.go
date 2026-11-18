@@ -112,13 +112,14 @@ func (t *NativeTun) configure() error {
 			if err != nil {
 				return E.Cause(err, "set ipv4 dns")
 			}
+			logStep("ipv4 dns set", &mark)
 		} else {
 			err = luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), nil, nil)
 			if err != nil {
 				return E.Cause(err, "set ipv4 dns")
 			}
+			logStep("ipv4 dns cleared", &mark)
 		}
-		logStep("ipv4 dns set", &mark)
 	}
 	if len(t.options.Inet6Address) > 0 {
 		err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), t.options.Inet6Address)
@@ -135,17 +136,19 @@ func (t *NativeTun) configure() error {
 			if err != nil {
 				return E.Cause(err, "set ipv6 dns")
 			}
+			logStep("ipv6 dns set", &mark)
 		} else {
 			err = luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), nil, nil)
 			if err != nil {
 				return E.Cause(err, "set ipv6 dns")
 			}
+			logStep("ipv6 dns cleared", &mark)
 		}
-		logStep("ipv6 dns set", &mark)
 	}
 	if len(t.options.Inet4Address) > 0 || len(t.options.Inet6Address) > 0 {
-		_ = luid.DisableDNSRegistration()
-		logStep("dns registration disabled", &mark)
+		if luid.DisableDNSRegistration() == nil {
+			logStep("dns registration disabled", &mark)
+		}
 	}
 	if t.options.AutoRoute {
 		gateway4, gateway6 := t.options.Inet4GatewayAddr(), t.options.Inet6GatewayAddr()
@@ -402,8 +405,10 @@ func (t *NativeTun) Close() error {
 		logStep("wintun session ended", &mark)
 		t.adapter.Close()
 		logStep("wintun adapter closed", &mark)
-		t.closeFirewall()
-		logStep("strict route filters removed", &mark)
+		if t.firewall != nil {
+			t.closeFirewall()
+			logStep("strict route filters removed", &mark)
+		}
 		if t.options.AutoRoute {
 			windnsapi.FlushResolverCache()
 			logStep("resolver cache flushed", &mark)
