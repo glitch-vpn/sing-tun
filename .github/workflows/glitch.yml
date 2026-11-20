@@ -1,0 +1,216 @@
+name: glitch
+
+# Linux amd64, Windows amd64, and Android arm64, arm (GOARM 7) and amd64.
+# Those are the targets libglitchcore builds this module for.
+# Android test binaries are compiled only: a hosted runner cannot execute them.
+# android/arm and android/amd64 have no internal linker, so those two jobs use
+# the API-21 clang from libglitchcore's Makefile and NDK r27c from its image.
+# A push to glitch and a pull request into it. This workflow does not create a tag.
+
+on:
+  push:
+    branches:
+      - glitch
+  pull_request:
+    branches:
+      - glitch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glitch-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            goarm: ""
+            execute: true
+            cgo: "0"
+            cc: ""
+          - name: Windows amd64
+            runner: windows-latest
+            goos: windows
+            goarch: amd64
+            goarm: ""
+            execute: true
+            cgo: "0"
+            cc: ""
+          - name: Android arm64
+            runner: ubuntu-latest
+            goos: android
+            goarch: arm64
+            goarm: "7"
+            execute: false
+            cgo: "0"
+            cc: ""
+          - name: Android arm
+            runner: ubuntu-latest
+            goos: android
+            goarch: arm
+            goarm: "7"
+            execute: false
+            cgo: "1"
+            cc: armv7a-linux-androideabi21-clang
+          - name: Android amd64
+            runner: ubuntu-latest
+            goos: android
+            goarch: amd64
+            goarm: "7"
+            execute: false
+            cgo: "1"
+            cc: x86_64-linux-android21-clang
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
+      CC_BIN: ${{ matrix.cc }}
+      GOTOOLCHAIN: local
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
+      EXECUTE: ${{ matrix.execute }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+
+      - name: Cache Android NDK
+        if: matrix.cc != ''
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/android-ndk-r27c
+          key: android-ndk-r27c-linux
+
+      - name: Install Android NDK
+        if: matrix.cc != '' && steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ndk.zip" https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          rm -f "$RUNNER_TEMP/ndk.zip"
+
+      - name: Select Android NDK
+        if: matrix.cc != ''
+        run: echo "ANDROID_NDK_HOME=${RUNNER_TEMP}/android-ndk-r27c" >> "$GITHUB_ENV"
+
+      # The ping tests open an ICMP datagram socket. Linux allows that only
+      # for a user inside ping_group_range.
+      - name: Allow ICMP sockets
+        if: matrix.execute && matrix.goos == 'linux'
+        run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          if [ -z "${GOARM:-}" ]; then
+            unset GOARM
+          fi
+          if [ -n "${CC_BIN:-}" ]; then
+            if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+              echo "ANDROID_NDK_HOME is not set" >&2
+              exit 1
+            fi
+            export CC="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/${CC_BIN}"
+          fi
+          bin="${TMPDIR:-/tmp}/sing-tun.test"
+          trap 'rm -f "$bin"' EXIT
+
+          # Packages this target's build of the library links. ping is not
+          # imported by the library root; it still has this module's ICMP tests.
+          list=$(go list -deps -tags with_gvisor -f '{{.ImportPath}}' .)
+          pkgs=()
+          while IFS= read -r pkg; do
+            case "$pkg" in
+              github.com/metacubex/sing-tun|github.com/metacubex/sing-tun/*)
+                pkgs+=("$pkg")
+                ;;
+            esac
+          done <<< "$list"
+          have_ping=0
+          for pkg in "${pkgs[@]}"; do
+            if [ "$pkg" = "github.com/metacubex/sing-tun/ping" ]; then
+              have_ping=1
+            fi
+          done
+          if [ "$have_ping" -eq 0 ]; then
+            pkgs+=("github.com/metacubex/sing-tun/ping")
+          fi
+          if [ "${#pkgs[@]}" -eq 0 ]; then
+            echo "no packages for ${GOOS}/${GOARCH}" >&2
+            exit 1
+          fi
+          echo "packages for ${GOOS}/${GOARCH}:"
+          printf '  %s\n' "${pkgs[@]}"
+
+          # Go 1.27's go test vet rejects format strings in internal/gtcpip and
+          # %w passed to t.Errorf in internal/winipcfg. go build accepts both,
+          # and that is how the core builds this module.
+          if [ "$EXECUTE" != "true" ]; then
+            for pkg in "${pkgs[@]}"; do
+              go test -vet=off -c -o "$bin" -tags with_gvisor "$pkg"
+            done
+            echo "compiled ${#pkgs[@]} packages for ${GOOS}/${GOARCH}"
+            exit 0
+          fi
+
+          # TestMipsWindowsReadFailureExitsReadLoop panics: Mipstack.readLoop
+          # calls SetRXChecksumOffload on a nil stack (mobile backlog B-0493).
+          # It is the only test this run skips.
+          go test -vet=off -tags with_gvisor -count=1 -timeout 20m \
+            -skip '^TestMipsWindowsReadFailureExitsReadLoop$' \
+            "${pkgs[@]}"
+
+  lint:
+    name: lint (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: windows
+            goarch: amd64
+          # android/amd64 does not vet without the NDK linker. The root
+          # package's Android files are shared, so arm64 covers them.
+          - goos: android
+            goarch: arm64
+    env:
+      CGO_ENABLED: "0"
+      GOTOOLCHAIN: local
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+
+      # Same lint as the Makefile's root package, for the operating systems
+      # libglitchcore builds.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: .
