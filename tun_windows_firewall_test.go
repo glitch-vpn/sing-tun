@@ -72,7 +72,7 @@ func (f addedFilter) matches(remote netip.Addr, port uint16) bool {
 // or FWP_ACTION_PERMIT when none does.
 func (e *fakeFirewallEngine) ipv6Verdict(remote string, port uint16) uint32 {
 	address := netip.MustParseAddr(remote)
-	var verdict uint32 = winsys.FWP_ACTION_PERMIT
+	verdict := winsys.FWP_ACTION_PERMIT
 	var topWeight uintptr
 	matched := false
 	for _, filter := range e.filters {
