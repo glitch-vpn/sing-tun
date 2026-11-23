@@ -72,6 +72,15 @@ func getTestInterface() (*IPAdapterAddresses, error) {
 	return nil, windows.ERROR_NOT_FOUND
 }
 
+// requireTestAdapter skips a test that needs the adapter named in the header
+// when no adapter carries that name, as on a hosted CI runner.
+func requireTestAdapter(t *testing.T) {
+	t.Helper()
+	if _, err := getTestInterface(); err != nil {
+		t.Skipf("no network adapter named with %q: %v", testInterfaceMarker, err)
+	}
+}
+
 func getTestIPInterface(family AddressFamily) (*MibIPInterfaceRow, error) {
 	ifc, err := getTestInterface()
 	if err != nil {
@@ -140,6 +149,7 @@ func TestAdaptersAddresses(t *testing.T) {
 }
 
 func TestIPInterface(t *testing.T) {
+	requireTestAdapter(t)
 	ifcs, err := GetAdaptersAddresses(windows.AF_UNSPEC, GAAFlagDefault)
 	if err != nil {
 		t.Errorf("GetAdaptersAddresses() returned error: %w", err)
@@ -178,6 +188,7 @@ func TestIPInterfaces(t *testing.T) {
 }
 
 func TestIPChangeMetric(t *testing.T) {
+	requireTestAdapter(t)
 	ipifc, err := getTestIPInterface(windows.AF_INET)
 	if err != nil {
 		t.Errorf("getTestIPInterface() returned an error: %w", err)
@@ -268,6 +279,7 @@ func TestIPChangeMetric(t *testing.T) {
 }
 
 func TestIPChangeMTU(t *testing.T) {
+	requireTestAdapter(t)
 	ipifc, err := getTestIPInterface(windows.AF_INET)
 	if err != nil {
 		t.Errorf("getTestIPInterface() returned an error: %w", err)
@@ -315,6 +327,7 @@ func TestIPChangeMTU(t *testing.T) {
 }
 
 func TestGetIfRow(t *testing.T) {
+	requireTestAdapter(t)
 	ifc, err := getTestInterface()
 	if err != nil {
 		t.Errorf("getTestInterface() returned an error: %w", err)
@@ -360,6 +373,7 @@ func TestUnicastIPAddress(t *testing.T) {
 }
 
 func TestAddDeleteIPAddress(t *testing.T) {
+	requireTestAdapter(t)
 	ifc, err := getTestInterface()
 	if err != nil {
 		t.Errorf("getTestInterface() returned an error: %w", err)
@@ -450,6 +464,7 @@ func TestGetRoutes(t *testing.T) {
 }
 
 func TestAddDeleteRoute(t *testing.T) {
+	requireTestAdapter(t)
 	findRoute := func(luid LUID, dest netip.Prefix) ([]MibIPforwardRow2, error) {
 		var family AddressFamily
 		if dest.Addr().Is4() {
@@ -566,6 +581,7 @@ func TestAddDeleteRoute(t *testing.T) {
 }
 
 func TestFlushDNS(t *testing.T) {
+	requireTestAdapter(t)
 	ifc, err := getTestInterface()
 	if err != nil {
 		t.Errorf("getTestInterface() returned an error: %w", err)
@@ -609,6 +625,7 @@ func TestFlushDNS(t *testing.T) {
 }
 
 func TestSetDNS(t *testing.T) {
+	requireTestAdapter(t)
 	ifc, err := getTestInterface()
 	if err != nil {
 		t.Errorf("getTestInterface() returned an error: %w", err)
