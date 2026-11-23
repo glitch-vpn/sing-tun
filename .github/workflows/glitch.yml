@@ -201,6 +201,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -208,9 +210,11 @@ jobs:
           go-version: "1.27.3"
 
       # Same lint as the Makefile's root package, for the operating systems
-      # libglitchcore builds.
+      # libglitchcore builds. It reports only what the fork added after
+      # upstream's v0.4.28: code written upstream stays as upstream wrote it,
+      # and the fork's own code is held to every linter.
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
-          args: .
+          args: --new-from-rev=v0.4.28 .
