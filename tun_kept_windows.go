@@ -6,13 +6,12 @@ import (
 	"log"
 	"os"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/metacubex/sing-tun/internal/winipcfg"
 	"github.com/metacubex/sing-tun/internal/wintun"
-
 	"golang.org/x/sys/windows"
 )
 

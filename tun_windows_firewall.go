@@ -22,7 +22,7 @@ type firewallEngine interface {
 // Replaced by tests, since opening a session and adding filters needs
 // administrator rights.
 var (
-	openFirewallEngine   = openWindowsFirewallEngine
+	openFirewallEngine = openWindowsFirewallEngine
 	// The adapter is found by its LUID: its name in Network Connections is
 	// the user's to change.
 	lookupInterfaceIndex = func(luid uint64) (uint32, error) {
