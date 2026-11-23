@@ -101,25 +101,25 @@ type Options struct {
 	Inet6LoopbackAddress                  []netip.Addr
 	StrictRoute                           bool
 	// Windows, strict route without a TUN IPv6 address: let link-local, unique local and multicast IPv6 pass.
-	StrictRouteLocalNetworksDirect        bool
-	Inet4RouteAddress                     []netip.Prefix
-	Inet6RouteAddress                     []netip.Prefix
-	Inet4RouteExcludeAddress              []netip.Prefix
-	Inet6RouteExcludeAddress              []netip.Prefix
-	IncludeInterface                      []string
-	ExcludeInterface                      []string
-	IncludeUID                            []ranges.Range[uint32]
-	ExcludeUID                            []ranges.Range[uint32]
-	ExcludeSrcPort                        []ranges.Range[uint16]
-	ExcludeDstPort                        []ranges.Range[uint16]
-	IncludeAndroidUser                    []int
-	IncludePackage                        []string
-	ExcludePackage                        []string
-	IncludeMACAddress                     []net.HardwareAddr
-	ExcludeMACAddress                     []net.HardwareAddr
-	InterfaceMonitor                      DefaultInterfaceMonitor
-	FileDescriptor                        int
-	Logger                                logger.Logger
+	StrictRouteLocalNetworksDirect bool
+	Inet4RouteAddress              []netip.Prefix
+	Inet6RouteAddress              []netip.Prefix
+	Inet4RouteExcludeAddress       []netip.Prefix
+	Inet6RouteExcludeAddress       []netip.Prefix
+	IncludeInterface               []string
+	ExcludeInterface               []string
+	IncludeUID                     []ranges.Range[uint32]
+	ExcludeUID                     []ranges.Range[uint32]
+	ExcludeSrcPort                 []ranges.Range[uint16]
+	ExcludeDstPort                 []ranges.Range[uint16]
+	IncludeAndroidUser             []int
+	IncludePackage                 []string
+	ExcludePackage                 []string
+	IncludeMACAddress              []net.HardwareAddr
+	ExcludeMACAddress              []net.HardwareAddr
+	InterfaceMonitor               DefaultInterfaceMonitor
+	FileDescriptor                 int
+	Logger                         logger.Logger
 
 	// No work for TCP, do not use.
 	_TXChecksumOffload bool
