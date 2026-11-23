@@ -14,7 +14,6 @@ import (
 
 	"github.com/metacubex/sing-tun/internal/winipcfg"
 	"github.com/metacubex/sing-tun/internal/wintun"
-
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
 )
@@ -97,7 +96,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 
 // Every session on a kept adapter is a session on the handle that created it:
 // one create for the process, however many connects.
-func TestLeaseOnAKeptAdapterCreatesNothing(t *testing.T) {
+func TestLeaseOnAKeptAdapterCreatesNothing(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	kept, err := KeepAdapter("GlitchVPN", "Glitch VPN")
 	require.NoError(t, err)
@@ -115,7 +114,7 @@ func TestLeaseOnAKeptAdapterCreatesNothing(t *testing.T) {
 
 // Without a kept adapter each session creates its own, and releasing it
 // removes it.
-func TestLeaseWithoutAKeptAdapterCreatesOne(t *testing.T) {
+func TestLeaseWithoutAKeptAdapterCreatesOne(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	lease, err := leaseAdapter("GlitchVPN")
 	require.NoError(t, err)
@@ -127,20 +126,20 @@ func TestLeaseWithoutAKeptAdapterCreatesOne(t *testing.T) {
 
 // A name another process holds is refused, not opened: a session on its
 // adapter would lose it when that process goes.
-func TestLeaseRefusesAnAdapterAnotherProcessHolds(t *testing.T) {
+func TestLeaseRefusesAnAdapterAnotherProcessHolds(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, func(int) (*fakeAdapter, error) { return nil, syscall.Errno(0x800700B7) })
 	_, err := leaseAdapter("GlitchVPN")
 	require.ErrorIs(t, err, ErrAdapterHeld)
 	require.Empty(t, fake.created)
 }
 
-func TestLeaseOtherCreateErrorsAreNotTakenForAnotherHolder(t *testing.T) {
+func TestLeaseOtherCreateErrorsAreNotTakenForAnotherHolder(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useFakeWintun(t, func(int) (*fakeAdapter, error) { return nil, errors.New("driver missing") })
 	_, err := leaseAdapter("GlitchVPN")
 	require.EqualError(t, err, "driver missing")
 }
 
-func TestLeaseClosesTheAdapterWhenItsSessionCannotStart(t *testing.T) {
+func TestLeaseClosesTheAdapterWhenItsSessionCannotStart(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, func(int) (*fakeAdapter, error) {
 		return &fakeAdapter{sessionErrs: []error{errors.New("no ring")}}, nil
 	})
@@ -151,7 +150,7 @@ func TestLeaseClosesTheAdapterWhenItsSessionCannotStart(t *testing.T) {
 
 // A kept adapter the user disabled or a network reset removed: the session
 // start fails, the adapter is created again, within the same connect.
-func TestLeaseCreatesAKeptAdapterAgainWhenItWasLost(t *testing.T) {
+func TestLeaseCreatesAKeptAdapterAgainWhenItWasLost(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useAdapterGone(t, true)
 	fake := useFakeWintun(t, func(n int) (*fakeAdapter, error) {
 		if n == 0 {
@@ -176,7 +175,7 @@ func TestLeaseCreatesAKeptAdapterAgainWhenItWasLost(t *testing.T) {
 // When it cannot be created again the mark is dropped, and the connect goes on
 // to the session's own create, which is refused if another process took the
 // name.
-func TestLeaseDropsTheKeptAdapterThatCannotBeCreatedAgain(t *testing.T) {
+func TestLeaseDropsTheKeptAdapterThatCannotBeCreatedAgain(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useAdapterGone(t, true)
 	fake := useFakeWintun(t, func(n int) (*fakeAdapter, error) {
 		if n == 0 {
@@ -193,7 +192,7 @@ func TestLeaseDropsTheKeptAdapterThatCannotBeCreatedAgain(t *testing.T) {
 	require.Equal(t, 1, fake.created[0].closed)
 }
 
-func TestClosingTheKeptAdapterRemovesItOnceAndForgetsTheName(t *testing.T) {
+func TestClosingTheKeptAdapterRemovesItOnceAndForgetsTheName(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	kept, err := KeepAdapter("GlitchVPN", "Glitch VPN")
 	require.NoError(t, err)
@@ -237,7 +236,7 @@ func useFakeFlusher(t *testing.T, flusher *fakeFlusher) {
 
 // Releasing a kept adapter leaves the device and takes every address, route
 // and DNS server of both families off it.
-func TestReleasingAKeptAdapterClearsBothFamiliesAndKeepsTheDevice(t *testing.T) {
+func TestReleasingAKeptAdapterClearsBothFamiliesAndKeepsTheDevice(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	out := captureLog(t)
 	flusher := &fakeFlusher{}
 	useFakeFlusher(t, flusher)
@@ -248,7 +247,7 @@ func TestReleasingAKeptAdapterClearsBothFamiliesAndKeepsTheDevice(t *testing.T) 
 	require.Contains(t, out.String(), "[tun] kept adapter cleared in ")
 }
 
-func TestAClearThatFailsIsLoggedAndNotReportedAsDone(t *testing.T) {
+func TestAClearThatFailsIsLoggedAndNotReportedAsDone(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	out := captureLog(t)
 	flusher := &fakeFlusher{failing: map[string]bool{"dns6": true, "routes4": true}}
 	useFakeFlusher(t, flusher)
@@ -262,7 +261,7 @@ func TestAClearThatFailsIsLoggedAndNotReportedAsDone(t *testing.T) {
 
 // The strict route's filters name the tunnel's interface by the adapter's
 // LUID: its connection name is the user's to change.
-func TestStrictRouteFindsTheTunnelByTheAdaptersLUID(t *testing.T) {
+func TestStrictRouteFindsTheTunnelByTheAdaptersLUID(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useFakeFirewall(t, -1)
 	previous := lookupInterfaceIndex
 	t.Cleanup(func() { lookupInterfaceIndex = previous })
@@ -275,6 +274,7 @@ func TestStrictRouteFindsTheTunnelByTheAdaptersLUID(t *testing.T) {
 // Wintun hands back the failure of SwDeviceCreate as an HRESULT, which is not
 // os.ErrExist: the Win32 code and its HRESULT form both mean the name is taken.
 func TestAdapterExistsKnowsTheHRESULTForm(t *testing.T) {
+	t.Parallel()
 	require.False(t, errors.Is(syscall.Errno(0x800700B7), os.ErrExist), "the premise: the HRESULT does not match ErrExist")
 	for _, err := range []error{
 		syscall.Errno(183), syscall.Errno(0x800700B7),
@@ -290,7 +290,7 @@ func TestAdapterExistsKnowsTheHRESULTForm(t *testing.T) {
 	}
 }
 
-func TestKeepAdapterOnAHeldNameSaysSo(t *testing.T) {
+func TestKeepAdapterOnAHeldNameSaysSo(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useFakeWintun(t, func(int) (*fakeAdapter, error) { return nil, syscall.Errno(0x800700B7) })
 	_, err := KeepAdapter("GlitchVPN", "Glitch VPN")
 	require.ErrorIs(t, err, ErrAdapterHeld)
@@ -299,7 +299,7 @@ func TestKeepAdapterOnAHeldNameSaysSo(t *testing.T) {
 
 // The kept adapter has one session at a time, and a refused second session
 // leaves the first one's adapter alone.
-func TestLeaseRefusesASecondSessionOnTheKeptAdapter(t *testing.T) {
+func TestLeaseRefusesASecondSessionOnTheKeptAdapter(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	_, err := KeepAdapter("GlitchVPN", "Glitch VPN")
 	require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestLeaseRefusesASecondSessionOnTheKeptAdapter(t *testing.T) {
 
 // A session start that fails on an adapter Windows still lists is that
 // session's failure: the device is left, and nothing is created.
-func TestLeaseKeepsTheDeviceWhenTheSessionFailsOnAPresentAdapter(t *testing.T) {
+func TestLeaseKeepsTheDeviceWhenTheSessionFailsOnAPresentAdapter(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useAdapterGone(t, false)
 	fake := useFakeWintun(t, func(int) (*fakeAdapter, error) {
 		return &fakeAdapter{sessionErrs: []error{nil, errors.New("ring in use")}}, nil
@@ -334,7 +334,7 @@ func TestLeaseKeepsTheDeviceWhenTheSessionFailsOnAPresentAdapter(t *testing.T) {
 }
 
 // After Close the kept adapter is not created again by a late session.
-func TestLeaseAfterCloseFailsAndCreatesNothing(t *testing.T) {
+func TestLeaseAfterCloseFailsAndCreatesNothing(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	kept, err := KeepAdapter("GlitchVPN", "Glitch VPN")
 	require.NoError(t, err)
@@ -349,7 +349,7 @@ func TestLeaseAfterCloseFailsAndCreatesNothing(t *testing.T) {
 
 // A Tun still open when its kept adapter closes releases without touching the
 // freed handle: the LUID was read when the session started.
-func TestReleaseAfterTheKeptAdapterClosedDoesNotTouchItsHandle(t *testing.T) {
+func TestReleaseAfterTheKeptAdapterClosedDoesNotTouchItsHandle(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useFakeWintun(t, freshAdapters)
 	flusher := &fakeFlusher{}
 	useFakeFlusher(t, flusher)
@@ -365,7 +365,7 @@ func TestReleaseAfterTheKeptAdapterClosedDoesNotTouchItsHandle(t *testing.T) {
 
 // A kept adapter is cleared before configure() runs: what an earlier session
 // whose clearing failed left must not reach the next one.
-func TestAKeptAdapterIsClearedBeforeItIsConfigured(t *testing.T) {
+func TestAKeptAdapterIsClearedBeforeItIsConfigured(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	useFakeWintun(t, freshAdapters)
 	flusher := &fakeFlusher{}
 	useFakeFlusher(t, flusher)
@@ -388,7 +388,7 @@ func TestAKeptAdapterIsClearedBeforeItIsConfigured(t *testing.T) {
 
 // A configure that fails gives a kept adapter back cleared and idle, and a
 // session's own adapter removed.
-func TestAFailedConfigureReleasesTheAdapter(t *testing.T) {
+func TestAFailedConfigureReleasesTheAdapter(t *testing.T) { //nolint:paralleltest // replaces the package-level createAdapter, adapterGone, keptAdapters and the default log output
 	fake := useFakeWintun(t, freshAdapters)
 	flusher := &fakeFlusher{}
 	useFakeFlusher(t, flusher)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestARouteThatFailsStopsTheRestEvenWhenLaterOnesWouldSucceed(t *testing.T) {
+	t.Parallel()
 	refused := errors.New("the object already exists")
 	ranges := []netip.Prefix{
 		netip.MustParsePrefix("0.0.0.0/1"),

@@ -91,9 +91,11 @@ func TestICMPDirectSessionLifecycle(t *testing.T) {
 }
 
 func TestICMPPolicy(t *testing.T) {
+	t.Parallel()
 	for _, policy := range []string{"drop", "reset", "declined", "error"} {
 		policy := policy
 		t.Run(policy, func(t *testing.T) {
+			t.Parallel()
 			d := newMemoryTun()
 			called := make(chan struct{}, 1)
 			h := &testHandler{prepare: func(DirectRouteContext) (DirectRouteDestination, error) {
@@ -195,7 +197,6 @@ func TestICMPAdmissionLimitDoesNotBlockInput(t *testing.T) {
 			time.Sleep(time.Millisecond)
 		}
 	}
-
 }
 
 func TestICMPInterfaceAddressBypassesPolicy(t *testing.T) {
@@ -271,10 +272,12 @@ func TestMipsICMPResetAdministrativelyProhibited(t *testing.T) {
 }
 
 func TestMipsICMPForwardsOnly(t *testing.T) {
+	t.Parallel()
 	for _, ipv6 := range []bool{false, true} {
 		for _, mode := range []string{"declined", "error", "direct"} {
 			ipv6, mode := ipv6, mode
 			t.Run(map[bool]string{false: "ipv4", true: "ipv6"}[ipv6]+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				source, target := netip.MustParseAddr("198.18.0.2"), netip.MustParseAddr("8.8.8.8")
 				protocol, echo, replyType := byte(1), byte(8), byte(0)
 				if ipv6 {

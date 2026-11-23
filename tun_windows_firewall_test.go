@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/metacubex/sing-tun/internal/winsys"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,7 +116,7 @@ func ipv4Only(options Options) Options {
 
 // Without an IPv6 address on the TUN, a strict route blocks global IPv6 for
 // every process but the core and lets loopback through.
-func TestStrictRouteWithoutTunIPv6KeepsLoopback(t *testing.T) {
+func TestStrictRouteWithoutTunIPv6KeepsLoopback(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	require.NoError(t, strictRouteTun(ipv4Only(Options{})).configureFirewall())
 	requireIPv6Verdict(t, engine, "::1", 443, winsys.FWP_ACTION_PERMIT)
@@ -129,7 +128,7 @@ func TestStrictRouteWithoutTunIPv6KeepsLoopback(t *testing.T) {
 
 // With local networks direct, link-local, unique local and multicast IPv6 pass
 // as well, and global IPv6 stays blocked.
-func TestStrictRouteWithoutTunIPv6PermitsLocalNetworksWhenDirect(t *testing.T) {
+func TestStrictRouteWithoutTunIPv6PermitsLocalNetworksWhenDirect(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	require.NoError(t, strictRouteTun(ipv4Only(Options{StrictRouteLocalNetworksDirect: true})).configureFirewall())
 	requireIPv6Verdict(t, engine, "::1", 443, winsys.FWP_ACTION_PERMIT)
@@ -141,7 +140,7 @@ func TestStrictRouteWithoutTunIPv6PermitsLocalNetworksWhenDirect(t *testing.T) {
 
 // DNS hijack keeps a query to a local resolver from passing the permits for
 // local networks, whatever the prefix.
-func TestStrictRouteLocalNetworksDirectBlocksDNSUnderHijack(t *testing.T) {
+func TestStrictRouteLocalNetworksDirectBlocksDNSUnderHijack(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	options := ipv4Only(Options{StrictRouteLocalNetworksDirect: true, DNSMode: DNSModeHijack})
 	require.NoError(t, strictRouteTun(options).configureFirewall())
@@ -159,7 +158,7 @@ func TestStrictRouteLocalNetworksDirectBlocksDNSUnderHijack(t *testing.T) {
 
 // The core's own IPv6 connections must outweigh every block, the local
 // resolvers' port 53 blocks included.
-func TestStrictRouteCoreIPv6PermitOutweighsBlocks(t *testing.T) {
+func TestStrictRouteCoreIPv6PermitOutweighsBlocks(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	options := ipv4Only(Options{StrictRouteLocalNetworksDirect: true, DNSMode: DNSModeHijack})
 	require.NoError(t, strictRouteTun(options).configureFirewall())
@@ -179,7 +178,7 @@ func TestStrictRouteCoreIPv6PermitOutweighsBlocks(t *testing.T) {
 }
 
 // Neighbor discovery filters each keep their own ICMP type.
-func TestStrictRouteWithoutTunIPv6PermitsNeighborDiscovery(t *testing.T) {
+func TestStrictRouteWithoutTunIPv6PermitsNeighborDiscovery(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	require.NoError(t, strictRouteTun(ipv4Only(Options{})).configureFirewall())
 	var icmpTypes []uintptr
@@ -195,7 +194,7 @@ func TestStrictRouteWithoutTunIPv6PermitsNeighborDiscovery(t *testing.T) {
 
 // With an IPv6 address on the TUN there is no IPv6 block, so the permits for
 // local prefixes are not added either.
-func TestStrictRouteWithTunIPv6HasNoIPv6Block(t *testing.T) {
+func TestStrictRouteWithTunIPv6HasNoIPv6Block(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	options := Options{Name: "test", Inet6Address: []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")}}
 	require.NoError(t, strictRouteTun(options).configureFirewall())
@@ -205,7 +204,7 @@ func TestStrictRouteWithTunIPv6HasNoIPv6Block(t *testing.T) {
 
 // A filter that fails to install must not leave the session open, since the
 // port 53 and IPv6 blocks stay machine-wide while it is.
-func TestFailedStrictRouteClosesFirewallSession(t *testing.T) {
+func TestFailedStrictRouteClosesFirewallSession(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	options := Options{Name: "test", DNSMode: DNSModeHijack, Inet4Address: []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")}}
 	complete := useFakeFirewall(t, -1)
 	require.NoError(t, strictRouteTun(options).configureFirewall())
@@ -221,7 +220,7 @@ func TestFailedStrictRouteClosesFirewallSession(t *testing.T) {
 }
 
 // A strict route that installed is released when the tunnel closes.
-func TestClosedStrictRouteClosesFirewallSession(t *testing.T) {
+func TestClosedStrictRouteClosesFirewallSession(t *testing.T) { //nolint:paralleltest // replaces the package-level openFirewallEngine and lookupInterfaceIndex
 	engine := useFakeFirewall(t, -1)
 	tun := strictRouteTun(Options{Name: "test", Inet4Address: []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")}})
 	require.NoError(t, tun.configureFirewall())

@@ -11,6 +11,7 @@ import (
 )
 
 func TestSystemICMPEcho(t *testing.T) {
+	t.Parallel()
 	tunAddress4, tunAddress6 := netip.MustParseAddr("198.18.0.1"), netip.MustParseAddr("fd00::1")
 	remote4, remote6 := netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("2001:4860:4860::8888")
 	process := func(s *System, source, destination netip.Addr) bool {
@@ -26,7 +27,9 @@ func TestSystemICMPEcho(t *testing.T) {
 		return writeBack
 	}
 	for _, mode := range []string{"declined", "error", "tun address"} {
+		mode := mode
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			handler := &testHandler{prepare: func(DirectRouteContext) (DirectRouteDestination, error) {
 				switch mode {
 				case "declined":

@@ -28,6 +28,7 @@ type memoryTun struct {
 func newMemoryTun() *memoryTun {
 	return &memoryTun{in: make(chan []byte, 32), out: make(chan []byte, 32), done: make(chan struct{})}
 }
+
 func (d *memoryTun) Read(p []byte) (int, error) {
 	select {
 	case packet := <-d.in:
@@ -36,6 +37,7 @@ func (d *memoryTun) Read(p []byte) (int, error) {
 		return 0, net.ErrClosed
 	}
 }
+
 func (d *memoryTun) Write(p []byte) (int, error) {
 	select {
 	case d.out <- append([]byte(nil), p...):
@@ -58,6 +60,7 @@ func (h *testHandler) NewConnection(ctx context.Context, c net.Conn, m M.Metadat
 	}
 	return c.Close()
 }
+
 func (h *testHandler) NewPacket(ctx context.Context, k netip.AddrPort, b *buf.Buffer, m M.Metadata, init func(N.PacketConn) N.PacketWriter) {
 	if h.udp != nil {
 		h.udp(ctx, k, b, m, init)
@@ -65,6 +68,7 @@ func (h *testHandler) NewPacket(ctx context.Context, k netip.AddrPort, b *buf.Bu
 		b.Release()
 	}
 }
+
 func (h *testHandler) PrepareConnection(_ string, _, _ M.Socksaddr, writer DirectRouteContext, _ time.Duration) (DirectRouteDestination, error) {
 	if h.prepare != nil {
 		return h.prepare(writer)
@@ -75,8 +79,10 @@ func (h *testHandler) NewError(context.Context, error) {}
 
 func testStack(t *testing.T, device Tun, handler *testHandler, modify func(*StackOptions)) *Mipstack {
 	t.Helper()
-	options := StackOptions{Logger: logger.NOP(), Tun: device, Handler: handler, Context: context.Background(), ICMPTimeout: 50 * time.Millisecond,
-		TunOptions: Options{MTU: 1500, Inet4Address: []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30")}, Inet6Address: []netip.Prefix{netip.MustParsePrefix("fd00::1/126")}}}
+	options := StackOptions{
+		Logger: logger.NOP(), Tun: device, Handler: handler, Context: context.Background(), ICMPTimeout: 50 * time.Millisecond,
+		TunOptions: Options{MTU: 1500, Inet4Address: []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30")}, Inet6Address: []netip.Prefix{netip.MustParsePrefix("fd00::1/126")}},
+	}
 	if modify != nil {
 		modify(&options)
 	}
@@ -102,6 +108,7 @@ func readPacket(t *testing.T, d *memoryTun) []byte {
 		return nil
 	}
 }
+
 func mipsTestChecksum(p []byte) uint16 {
 	var sum uint32
 	for len(p) >= 2 {
@@ -116,6 +123,7 @@ func mipsTestChecksum(p []byte) uint16 {
 	}
 	return ^uint16(sum)
 }
+
 func ipPacket(source, target netip.Addr, protocol byte, payload []byte) []byte {
 	h := 20
 	if source.Is6() {
@@ -141,6 +149,7 @@ func ipPacket(source, target netip.Addr, protocol byte, payload []byte) []byte {
 	}
 	return p
 }
+
 func transportPacket(source, target netip.Addr, protocol byte, payload []byte) []byte {
 	payload = append([]byte(nil), payload...)
 	pseudo := append(append([]byte(nil), source.AsSlice()...), target.AsSlice()...)
@@ -162,6 +171,7 @@ func transportPacket(source, target netip.Addr, protocol byte, payload []byte) [
 	binary.BigEndian.PutUint16(payload[offset:], mipsTestChecksum(append(pseudo, payload...)))
 	return ipPacket(source, target, protocol, payload)
 }
+
 func udpPacket(source, target netip.Addr, port uint16, data []byte) []byte {
 	p := make([]byte, 8+len(data))
 	binary.BigEndian.PutUint16(p, 12345)
@@ -170,6 +180,7 @@ func udpPacket(source, target netip.Addr, port uint16, data []byte) []byte {
 	copy(p[8:], data)
 	return transportPacket(source, target, 17, p)
 }
+
 func tcpPacket(source, target netip.Addr, seq, ack uint32, flags byte, payload []byte) []byte {
 	p := make([]byte, 20+len(payload))
 	binary.BigEndian.PutUint16(p, 12345)
@@ -277,8 +288,11 @@ func TestTCPHandshakeAndData(t *testing.T) {
 }
 
 func TestICMPDeclinedEchoAndFilter(t *testing.T) {
+	t.Parallel()
 	for _, pair := range [][2]string{{"198.18.0.1", "8.8.8.8"}, {"fd00::1", "2001:4860:4860::8888"}} {
+		pair := pair
 		t.Run(pair[0], func(t *testing.T) {
+			t.Parallel()
 			d := newMemoryTun()
 			testStack(t, d, &testHandler{}, nil)
 			source, target := netip.MustParseAddr(pair[0]), netip.MustParseAddr(pair[1])
