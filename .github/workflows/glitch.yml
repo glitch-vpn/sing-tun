@@ -20,7 +20,8 @@ permissions:
 
 concurrency:
   group: glitch-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its older run; a push to glitch always completes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -51,7 +52,7 @@ jobs:
             runner: ubuntu-latest
             goos: android
             goarch: arm64
-            goarm: "7"
+            goarm: ""
             execute: false
             cgo: "0"
             cc: ""
@@ -67,7 +68,7 @@ jobs:
             runner: ubuntu-latest
             goos: android
             goarch: amd64
-            goarm: "7"
+            goarm: ""
             execute: false
             cgo: "1"
             cc: x86_64-linux-android21-clang
@@ -152,16 +153,12 @@ jobs:
           if [ "$have_ping" -eq 0 ]; then
             pkgs+=("github.com/metacubex/sing-tun/ping")
           fi
-          if [ "${#pkgs[@]}" -eq 0 ]; then
-            echo "no packages for ${GOOS}/${GOARCH}" >&2
-            exit 1
-          fi
           echo "packages for ${GOOS}/${GOARCH}:"
           printf '  %s\n' "${pkgs[@]}"
 
-          # Go 1.27's go test vet rejects format strings in internal/gtcpip and
-          # %w passed to t.Errorf in internal/winipcfg. go build accepts both,
-          # and that is how the core builds this module.
+          # go test's vet pass rejects format strings in internal/gtcpip and %w
+          # passed to t.Errorf in internal/winipcfg. go build accepts both, and
+          # that is how the core builds this module.
           if [ "$EXECUTE" != "true" ]; then
             for pkg in "${pkgs[@]}"; do
               go test -vet=off -c -o "$bin" -tags with_gvisor "$pkg"
@@ -172,7 +169,10 @@ jobs:
 
           # TestMipsWindowsReadFailureExitsReadLoop panics: Mipstack.readLoop
           # calls SetRXChecksumOffload on a nil stack (mobile backlog B-0493).
-          # It is the only test this run skips.
+          # It is the only test this run skips by name. On the Windows job the
+          # internal/winipcfg tests that need an elevated process and an
+          # adapter named with "winipcfg_test" skip themselves in the test file
+          # when that adapter is absent, as on a hosted runner.
           go test -vet=off -tags with_gvisor -count=1 -timeout 20m \
             -skip '^TestMipsWindowsReadFailureExitsReadLoop$' \
             "${pkgs[@]}"
@@ -210,7 +210,7 @@ jobs:
       # Same lint as the Makefile's root package, for the operating systems
       # libglitchcore builds.
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.15.0
           args: .
