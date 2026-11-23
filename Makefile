@@ -17,14 +17,14 @@ fmt_install:
 	go install -v mvdan.cc/gofumpt@latest
 	go install -v github.com/daixiang0/gci@latest
 
-# Reports only what the fork added after upstream's v0.4.28, as the glitch
+# Reports only what the fork added after upstream's v0.4.29, as the glitch
 # workflow does.
 lint:
-	GOOS=linux golangci-lint run --new-from-rev=v0.4.28 .
-	GOOS=android golangci-lint run --new-from-rev=v0.4.28 .
-	GOOS=windows golangci-lint run --new-from-rev=v0.4.28 .
-	GOOS=darwin golangci-lint run --new-from-rev=v0.4.28 .
-	GOOS=freebsd golangci-lint run --new-from-rev=v0.4.28 .
+	GOOS=linux golangci-lint run --new-from-rev=v0.4.29 .
+	GOOS=android golangci-lint run --new-from-rev=v0.4.29 .
+	GOOS=windows golangci-lint run --new-from-rev=v0.4.29 .
+	GOOS=darwin golangci-lint run --new-from-rev=v0.4.29 .
+	GOOS=freebsd golangci-lint run --new-from-rev=v0.4.29 .
 
 lint_install:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint/v2/cmd/golangci-lint@v2.15.0

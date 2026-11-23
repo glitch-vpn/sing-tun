@@ -211,10 +211,10 @@ jobs:
 
       # Same lint as the Makefile's root package, for the operating systems
       # libglitchcore builds. It reports only what the fork added after
-      # upstream's v0.4.28: code written upstream stays as upstream wrote it,
+      # upstream's v0.4.29: code written upstream stays as upstream wrote it,
       # and the fork's own code is held to every linter.
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
-          args: --new-from-rev=v0.4.28 .
+          args: --new-from-rev=v0.4.29 .
